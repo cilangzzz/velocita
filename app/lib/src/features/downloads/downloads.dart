@@ -9,5 +9,11 @@ library;
 export 'domain/download_task.dart' show TaskSummary, DownloadStatus, TaskFilter, taskFromAria2;
 export 'data/downloads_repository.dart' show DownloadsRepository, downloadsRepositoryProvider;
 export 'presentation/task_list_provider.dart' show taskListProvider;
-export 'presentation/downloads_screen.dart' show DownloadsScreen, taskFilterProvider, DownloadFilter;
+export 'presentation/downloads_screen.dart'
+    show
+        DownloadsScreen,
+        taskFilterProvider,
+        DownloadFilter,
+        sortStateProvider,
+        SortColumn;
 export 'presentation/add_task_dialog.dart' show AddTaskDialog, SubmitResult, SubmitKind;

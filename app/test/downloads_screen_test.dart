@@ -5,20 +5,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:velocita/src/features/downloads/downloads.dart';
-import 'package:velocita/src/features/downloads/data/downloads_repository.dart';
 
 class _FakeRepo implements DownloadsRepository {
   final List<String> addedUris = [];
   @override
-  Future<String> addUri(String url) async {
+  String? get defaultSaveDir => null;
+  @override
+  Future<String> addUri(String url, {String? saveDir}) async {
     addedUris.add(url);
     return 'gid-${addedUris.length}';
   }
 
   @override
-  Future<String> addMagnet(String magnet) async => 'gid-m';
+  Future<String> addMagnet(String magnet, {String? saveDir}) async => 'gid-m';
   @override
-  Future<String> addTorrent(List<int> bytes) async => 'gid-t';
+  Future<String> addTorrent(List<int> bytes, {String? saveDir}) async =>
+      'gid-t';
   @override
   Future<void> pause(String gid) async {}
   @override
@@ -27,6 +29,9 @@ class _FakeRepo implements DownloadsRepository {
   Future<void> remove(String gid, {bool force = false}) async {}
   @override
   Future<List<TaskSummary>> activeTasks() async => const [];
+  @override
+  Future<List<TaskSummary>> stoppedTasks({int offset = 0, int num = 1000}) async =>
+      const [];
   @override
   Future<TaskSummary?> oneTask(String gid) async => null;
 }

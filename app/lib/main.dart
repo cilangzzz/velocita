@@ -29,8 +29,8 @@ Future<void> main() async {
   // already shows the correct size/title.
   await windowManager.ensureInitialized();
   const windowOptions = WindowOptions(
-    size: Size(1280, 800),
-    minimumSize: Size(960, 600),
+    size: Size(1080, 680),
+    minimumSize: Size(800, 520),
     title: 'Velocita',
     center: true,
     backgroundColor: Color(0xFF000000),

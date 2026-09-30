@@ -1,4 +1,5 @@
 // M2 download smoke: spawn aria2, addUri(http), poll until complete.
+// Now also persists to history.json via DownloadsRepository-like persistence.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -7,7 +8,7 @@ import 'package:logging/logging.dart';
 import 'package:velocita_kernel/velocita_kernel.dart';
 
 Future<void> main(List<String> cliArgs) async {
-  Logger.root.level = Level.ALL;
+  Logger.root.level = Level.WARNING;
   Logger.root.onRecord.listen((rec) {
     stderr.writeln('[${rec.level.name}] ${rec.loggerName}: ${rec.message}');
   });
@@ -78,21 +79,30 @@ Future<void> main(List<String> cliArgs) async {
   final finalStatus = (await rpc.tellStatus(gid))['status']?.toString();
   stderr.writeln('final: $finalStatus');
 
-  // List downloaded file.
-  final dir = Directory(workDir.path);
-  final files = await dir
-      .list()
-      .where((e) => e is File && e.statSync().size > 0)
-      .toList();
-  for (final f in files) {
-    final s = f.statSync();
-    stderr.writeln('  file: ${f.uri.pathSegments.last}  size=${s.size}B');
-  }
+  // Write history.json under the user's temp dir (simulating the app's
+  // persistence — the app itself writes to %APPDATA%/velocita/history.json
+  // via path_provider; here we use a sibling of workDir so this CLI is
+  // self-contained).
+  final historyFile = File('${workDir.path}/history.json');
+  await historyFile.writeAsString(jsonEncode({
+    'tasks': [
+      {
+        'gid': gid,
+        'filename': url.split('/').last.split('?').first,
+        'totalLength': 0,
+        'completedLength': 0,
+        'status': finalStatus,
+        'dir': workDir.path,
+        'savedAt': DateTime.now().toIso8601String(),
+      }
+    ],
+  }));
+  stderr.writeln('wrote history: ${historyFile.path}');
 
   stdout.writeln(jsonEncode({
     'status': finalStatus,
     'gid': gid,
-    'file_count': files.length,
+    'history': historyFile.path,
   }));
 
   await rpc.shutdown();

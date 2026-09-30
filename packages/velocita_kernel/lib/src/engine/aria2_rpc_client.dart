@@ -144,6 +144,25 @@ class Aria2RpcClient implements EngineAdapter {
         .toList(growable: false);
   }
 
+  /// List completed/error/removed tasks (aria2's `tellStopped`).
+  /// `offset` + `num` paginate — server caps at `--max-download-result`
+  /// (1000 by default).
+  Future<List<Map<String, Object?>>> tellStopped(
+    int offset,
+    int num, {
+    List<String>? keys,
+  }) async {
+    final proto = _requireProtocol();
+    final params = keys == null
+        ? <Object?>[offset, num]
+        : <Object?>[offset, num, keys];
+    _withSecretInPlace(params);
+    final result = await proto.call('aria2.tellStopped', params);
+    return (result as List)
+        .map((e) => (e as Map).cast<String, Object?>())
+        .toList(growable: false);
+  }
+
   /// Prepends the secret at index 0 in-place so aria2 sees `token:<secret>`
   /// as the first positional argument of every call.
   void _withSecretInPlace(List<Object?> params) {

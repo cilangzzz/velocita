@@ -17,25 +17,35 @@ final downloadsRepositoryProvider = Provider<DownloadsRepository>((ref) {
 });
 
 class DownloadsRepository {
-  DownloadsRepository(this._rpc);
+  DownloadsRepository(this._rpc, {this.defaultSaveDir});
 
+  /// A directory to use when no other resolver applies (e.g. when no
+  /// category matches). Kept as a final field so the repo can be moved
+  /// without touching the kernel.
+  final String? defaultSaveDir;
   final Aria2RpcClient _rpc;
 
   /// Add a download and return its gid.
-  Future<String> addUri(String url) async {
-    final gid = await _rpc.addUri([url]);
+  ///
+  /// [saveDir] defaults to the category-resolved directory if `null`
+  /// (the caller is expected to have classified already).
+  Future<String> addUri(String url, {String? saveDir}) async {
+    final dir = saveDir ?? defaultSaveDir;
+    final gid = await _rpc.addUri([url], options: dir == null ? null : {'dir': dir});
     return gid;
   }
 
   /// Add a magnet URI — aria2 fetches metadata and starts the download.
-  Future<String> addMagnet(String magnet) async {
-    final gid = await _rpc.addMagnet(magnet);
+  Future<String> addMagnet(String magnet, {String? saveDir}) async {
+    final dir = saveDir ?? defaultSaveDir;
+    final gid = await _rpc.addMagnet(magnet, options: dir == null ? null : {'dir': dir});
     return gid;
   }
 
   /// Add a torrent file (already read into bytes).
-  Future<String> addTorrent(List<int> bytes) async {
-    final gid = await _rpc.addTorrent(bytes);
+  Future<String> addTorrent(List<int> bytes, {String? saveDir}) async {
+    final dir = saveDir ?? defaultSaveDir;
+    final gid = await _rpc.addTorrent(bytes, options: dir == null ? null : {'dir': dir});
     return gid;
   }
 
@@ -45,13 +55,24 @@ class DownloadsRepository {
   /// Resume a paused task.
   Future<void> resume(String gid) async => _rpc.unpause(gid);
 
-  /// Remove a task (preserves files by default).
+  /// Remove a task from aria2's tracking. Files on disk are untouched.
   Future<void> remove(String gid, {bool force = false}) =>
       _rpc.remove(gid, force: force);
 
   /// Snapshot all active tasks.
   Future<List<TaskSummary>> activeTasks() async {
     final raws = await _rpc.tellActive();
+    return raws.map(taskFromAria2).toList(growable: false);
+  }
+
+  /// Snapshot completed/error tasks (aria2's `tellStopped`).
+  /// offset/num paginate; we ask for a large slice since the engine caps
+  /// `--max-download-result` at 1000 by default.
+  Future<List<TaskSummary>> stoppedTasks({
+    int offset = 0,
+    int num = 1000,
+  }) async {
+    final raws = await _rpc.tellStopped(offset, num);
     return raws.map(taskFromAria2).toList(growable: false);
   }
 
