@@ -1,0 +1,18 @@
+# Top-level gitignore for the Velocita repo.
+# Per-package ignores (Flutter/Dart build outputs etc.) live in their own
+# `.gitignore` files (e.g. app/.gitignore).
+
+# Downloaded at first build — keep this out of the repo so the checkout
+# stays small and the version pin lives in the build script instead.
+bin/aria2c.exe
+
+# OS / editor noise (top-level only — sub-package .gitignore covers the rest).
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Generated / local IDE state.
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,12 @@
+# Dart / pub artifacts (CLI prototypes under tools/feat/).
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# OS / editor noise.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

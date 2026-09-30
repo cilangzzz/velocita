@@ -1,0 +1,48 @@
+name: velocita
+description: "Velocita — Flutter-native download manager."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Velocita kernel (pure Dart)
+  velocita_kernel:
+    path: ../packages/velocita_kernel
+
+  # State management (M1 uses riverpod v2 - v3 not yet stable at M1 cutoff)
+  flutter_riverpod: ^2.5.1
+
+  # Routing
+  go_router: ^14.2.7
+
+  # Desktop window
+  window_manager: ^0.3.9
+
+  # System tray
+  system_tray: ^2.0.3
+
+  # Deep links
+  app_links: ^6.3.2
+
+  # Logging
+  logging: ^1.3.0
+
+  # Filesystem paths (data + downloads)
+  path_provider: ^2.1.4
+
+  # Synchronization primitives
+  synchronized: ^3.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

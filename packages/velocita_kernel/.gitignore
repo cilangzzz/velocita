@@ -1,0 +1,13 @@
+# Dart / pub artifacts (pure-Dart kernel package, no Flutter).
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Symbolication / obfuscation.
+*.symbols
+*.map.json
+
+# Native assets.
+build/native_assets/

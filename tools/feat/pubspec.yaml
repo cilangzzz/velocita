@@ -1,0 +1,12 @@
+name: velocita_feat
+description: One-off CLI prototypes (e.g. M0 aria2 ping).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  velocita_kernel:
+    path: ../../packages/velocita_kernel
+  logging: ^1.3.0
