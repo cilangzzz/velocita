@@ -2,11 +2,93 @@
 
 All notable changes to Velocita are documented here. Dates in `YYYY-MM-DD`.
 
-## 2026-10-08 — M6: Browser integration (Native Messaging + velocita://)
+## 2026-10-08 — M6: categories + DataTable UI
 
 ### Added
 
-- **M6** — Chrome / Edge / Firefox extensions plus a local IPC service
+- **M6** — Categories feature module under
+  `app/lib/src/features/categories/`:
+  - `domain/category.dart` — `Category` model (id, name,
+    defaultSaveDir, extensions, iconName, isDefault) with JSON
+    round-trip and six seed categories (video / music / document /
+    archive / program / image).
+  - `domain/classification_rule.dart` — `extension` / `substring` /
+    `regex` rule flavors with priority + `RuleSource`.
+  - `domain/categories.dart` — `classifyByRules()` +
+    `resolveSaveDir()` pure-Dart helpers.
+  - `data/categories_repository.dart` — `CategoriesNotifier`
+    (AsyncNotifier) + JSON persistence + `categoriesProvider`.
+- **M6** — `downloads_screen.dart` rewritten around a `DataTable`
+  with sortable columns; sidebar gains a categories section.
+- **M6** — `downloads_repository.dart` gains `defaultSaveDir` and a
+  `saveDir` parameter on `addUri` / `addMagnet` / `addTorrent`; new
+  `stoppedTasks()` snapshot via `aria2.tellStopped`.
+- **M6** — Kernel: `aria2_rpc_client.tellStopped(offset, num, keys:)`.
+- **M6** — `tools/feat/download_smoke.dart` quiets logs to WARNING
+  and writes a `history.json` beside `workDir` to mirror the app's
+  persistence path.
+
+## 2026-10-08 — M7: theme + Global* localizations + task timestamps
+
+### Added
+
+- **M7** — `app/lib/src/theme/theme_provider.dart` — Riverpod
+  `themeModeProvider` (dark default) replacing the hard-coded
+  `ThemeMode.dark` in `app.dart`.
+- **M7** — Settings page theme picker writes through the provider.
+- **M7** — `flutter_localizations` SDK dep + `app.dart` swaps
+  `DefaultMaterialLocalizations` / `DefaultWidgetsLocalizations`
+  delegates for `GlobalMaterialLocalizations` /
+  `GlobalWidgetsLocalizations` / `GlobalCupertinoLocalizations`.
+  Without this the `en` / `zh-CN` catalogs were always over-ridden
+  by the bundled English-only defaults.
+- **M7** — `app_localizations.dart` locale resolver accepts BCP 47
+  tags (`zh-CN`, not just `zh`) and grows by 21 keys.
+- **M7** — `TaskSummary` gains `addedAt` / `completedAt` (`DateTime?`).
+- **M7** — Kernel `EngineAdapter` gains `tellStatusWithKeys(gid, keys)`
+  (aria2 only emits those fields when explicitly requested).
+- **M7** — `AddTaskDialog` is now `ConsumerStatefulWidget` and takes
+  an optional `categoryId` from the sidebar selection; `saveDir`
+  resolves category → extension fallback.
+
+## 2026-10-08 — M8: persisted download settings + proxy + engine option sync
+
+### Added
+
+- **M8** — `domain/download_settings.dart` — `DownloadSettings` value
+  object (saveDir, maxConcurrentDownloads, speed limit bytes/sec,
+  `ProxyKind` off/http/socks5 + host/port/auth/bypass) with JSON
+  round-trip and `buildAllProxy()` encoding the HTTP-only limitation
+  of aria2c 1.37.0 (SOCKS5 → `''`).
+- **M8** — `data/download_settings_provider.dart` —
+  `DownloadSettingsNotifier` (AsyncNotifier). Persists to
+  `<appSupport>/velocita/settings.json`, seeds defaults from the
+  platform downloads dir, hydrates the freshly spawned engine at
+  boot, and pushes every field change to aria2 via
+  `changeGlobalOption`.
+- **M8** — Kernel `EngineAdapter` gains `getGlobalOption(keys)` /
+  `changeGlobalOption(options)` (aria2.getGlobalOption /
+  aria2.changeGlobalOption); passthroughs on `DownloadsRepository`.
+- **M8** — `kernel_bootstrap.dart` reads persisted `settings.json`
+  at process start and injects `--all-proxy` / `--no-proxy` so a
+  SOCKS5 or HTTP proxy survives an app restart (aria2 only accepts
+  `all-proxy` on the command line for non-HTTP schemes).
+- **M8** — `settings_page.dart` — full settings page: saveDir,
+  max concurrent (1-16), speed limit (KiB/s + ∞), proxy kind /
+  http host / port / auth / bypass. Reads / writes through the
+  provider so every change lands on the engine immediately.
+- **M8** — `add_task_dialog.dart` auto-resolves `saveDir` from URL
+  / filename extension against real categories; unmatched →
+  `Downloads\Other` catch-all.
+- **M8** — Tests: `download_settings_test.dart` (JSON round-trip
+  incl. legacy pre-proxy file, `buildAllProxy` matrix); fake repo
+  gains the two new global-option methods.
+
+## 2026-10-08 — M9: Browser integration (Native Messaging + velocita://)
+
+### Added
+
+- **M9** — Chrome / Edge / Firefox extensions plus a local IPC service
   that turns the browser into a first-class download source.
   - `BrowserIntegrationService`: loopback HTTP server on
     `127.0.0.1:16800` with `GET /api/ping`, `POST /api/add`,
