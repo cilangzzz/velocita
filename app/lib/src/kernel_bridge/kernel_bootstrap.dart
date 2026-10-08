@@ -77,7 +77,10 @@ Future<KernelFacade> bootstrapKernel() async {
       engineInfo: info,
       dataDir: dataDir.path,
       downloadDir: downloadDir.path,
-      downloadsRepository: DownloadsRepository(rpc),
+      downloadsRepository: DownloadsRepository(
+        rpc,
+        defaultSaveDir: downloadDir.path,
+      ),
     );
     _instance = facade;
     return facade;

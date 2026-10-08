@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../kernel_bridge/kernel_provider.dart';
 import '../../../localization/app_localizations.dart';
 import '../domain/download_task.dart';
 import 'add_task_dialog.dart';
@@ -54,6 +55,7 @@ class _CategorySidebar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l = AppLocalizations.of(context);
+    final selected = ref.watch(selectedCategoryProvider);
     return SizedBox(
       width: 180,
       child: ListView(
@@ -62,7 +64,7 @@ class _CategorySidebar extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Text(
-              'CATEGORIES',
+              l.categories,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -71,25 +73,67 @@ class _CategorySidebar extends ConsumerWidget {
           ListTile(
             dense: true,
             leading: const Icon(Icons.folder_outlined),
-            title: const Text('All Downloads'),
-            selected: ref.watch(selectedCategoryProvider) == null,
+            title: Text(l.allDownloads),
+            selected: selected == null,
             onTap: () => ref.read(selectedCategoryProvider.notifier).state = null,
           ),
           ListTile(
             dense: true,
-            leading: const Icon(Icons.folder_outlined),
-            title: const Text('Uncategorized'),
-            selected: ref.watch(selectedCategoryProvider) == '__none__',
+            leading: const Icon(Icons.help_outline),
+            title: Text(l.uncategorized),
+            selected: selected == '__none__',
             onTap: () =>
                 ref.read(selectedCategoryProvider.notifier).state = '__none__',
           ),
           const Divider(),
-          const _CategoryRow(icon: Icons.movie_outlined, label: 'Movies'),
-          const _CategoryRow(icon: Icons.music_note_outlined, label: 'Music'),
-          const _CategoryRow(icon: Icons.archive_outlined, label: 'Archives'),
-          const _CategoryRow(icon: Icons.picture_as_pdf_outlined, label: 'Documents'),
-          const _CategoryRow(icon: Icons.adb_outlined, label: 'Programs'),
-          const _CategoryRow(icon: Icons.image_outlined, label: 'Images'),
+          _CategoryRow(
+            icon: Icons.movie_outlined,
+            label: l.movies,
+            id: 'video',
+            selected: selected == 'video',
+            onTap: () =>
+                ref.read(selectedCategoryProvider.notifier).state = 'video',
+          ),
+          _CategoryRow(
+            icon: Icons.music_note_outlined,
+            label: l.music,
+            id: 'music',
+            selected: selected == 'music',
+            onTap: () =>
+                ref.read(selectedCategoryProvider.notifier).state = 'music',
+          ),
+          _CategoryRow(
+            icon: Icons.archive_outlined,
+            label: l.archives,
+            id: 'archive',
+            selected: selected == 'archive',
+            onTap: () =>
+                ref.read(selectedCategoryProvider.notifier).state = 'archive',
+          ),
+          _CategoryRow(
+            icon: Icons.picture_as_pdf_outlined,
+            label: l.documents,
+            id: 'document',
+            selected: selected == 'document',
+            onTap: () =>
+                ref.read(selectedCategoryProvider.notifier).state = 'document',
+          ),
+          _CategoryRow(
+            icon: Icons.adb_outlined,
+            label: l.programs,
+            id: 'program',
+            selected: selected == 'program',
+            onTap: () =>
+                ref.read(selectedCategoryProvider.notifier).state = 'program',
+          ),
+          _CategoryRow(
+            icon: Icons.image_outlined,
+            label: l.images,
+            id: 'image',
+            selected: selected == 'image',
+            onTap: () =>
+                ref.read(selectedCategoryProvider.notifier).state = 'image',
+          ),
           const Divider(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -103,14 +147,33 @@ class _CategorySidebar extends ConsumerWidget {
           ListTile(
             dense: true,
             leading: const Icon(Icons.tune),
-            title: const Text('Manage categories'),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Categories are managed in Settings.'),
-                ),
-              );
-            },
+            title: Text(l.manageCategories),
+            onTap: () => _showCategoriesInfo(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCategoriesInfo(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Default categories'),
+        content: const Text(
+          'Velocita ships 6 default categories with extension patterns:\n\n'
+          '• Videos  — .mp4 .mkv .avi .mov .webm\n'
+          '• Music   — .mp3 .flac .wav .aac\n'
+          '• Documents — .pdf .doc .docx .txt\n'
+          '• Archives — .zip .rar .7z .tar .gz\n'
+          '• Programs — .exe .msi .dmg .deb\n'
+          '• Images  — .jpg .jpeg .png .gif .webp\n\n'
+          'New downloads are routed into the matching category folder.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -119,9 +182,18 @@ class _CategorySidebar extends ConsumerWidget {
 }
 
 class _CategoryRow extends StatelessWidget {
-  const _CategoryRow({required this.icon, required this.label});
+  const _CategoryRow({
+    required this.icon,
+    required this.label,
+    required this.id,
+    required this.selected,
+    required this.onTap,
+  });
   final IconData icon;
   final String label;
+  final String id;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +201,8 @@ class _CategoryRow extends StatelessWidget {
       dense: true,
       leading: Icon(icon),
       title: Text(label),
+      selected: selected,
+      onTap: onTap,
     );
   }
 }
@@ -244,20 +318,32 @@ class _Toolbar extends ConsumerWidget {
   }
 
   Future<void> _openAddDialog(BuildContext context, WidgetRef ref) async {
+    // Pass the currently selected category so the dialog can show where the
+    // download will land before the user confirms. The dialog also auto-
+    // resolves a save dir from URL extension when no category is selected.
+    final categoryId = ref.read(selectedCategoryProvider);
     final result = await showDialog<SubmitResult>(
       context: context,
-      builder: (_) => const AddTaskDialog(),
+      builder: (_) => AddTaskDialog(categoryId: categoryId),
     );
     if (result == null) return;
     final notifier = ref.read(taskListProvider.notifier);
+    // Resolve save dir: explicit category > auto-detect from extension >
+    // null (= use repository's default).
+    final saveDir = result.saveDir ?? _resolveSaveDirFor(ref, categoryId);
+    if (saveDir != null) {
+      try {
+        Directory(saveDir).createSync(recursive: true);
+      } catch (_) {}
+    }
     try {
       switch (result.kind) {
         case SubmitKind.url:
-          await notifier.addUri(result.url!);
+          await notifier.addUri(result.url!, saveDir: saveDir);
         case SubmitKind.magnet:
-          await notifier.addMagnet(result.magnet!);
+          await notifier.addMagnet(result.magnet!, saveDir: saveDir);
         case SubmitKind.torrent:
-          await notifier.addTorrent(result.torrentBytes!);
+          await notifier.addTorrent(result.torrentBytes!, saveDir: saveDir);
       }
     } catch (e) {
       if (!context.mounted) return;
@@ -265,6 +351,17 @@ class _Toolbar extends ConsumerWidget {
         SnackBar(content: Text('Add failed: $e')),
       );
     }
+  }
+
+  /// Resolve the save directory for the given category id. `null` means
+  /// "use the default downloads dir" (i.e. no category selected).
+  String? _resolveSaveDirFor(WidgetRef ref, String? categoryId) {
+    if (categoryId == null || categoryId == '__none__') return null;
+    final appSupport = ref.read(kernelProvider).downloadDir;
+    for (final c in _categorySpecs) {
+      if (c.id == categoryId) return '$appSupport\\${c.dirName}';
+    }
+    return null;
   }
 }
 
@@ -303,9 +400,11 @@ class _DownloadsTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filter = ref.watch(taskFilterProvider);
-    final filtered = _applyFilter(tasks, filter);
+    final categoryId = ref.watch(selectedCategoryProvider);
+    final byStatus = _applyFilter(tasks, filter);
+    final byCategory = _applyCategory(byStatus, categoryId);
     final sort = ref.watch(sortStateProvider);
-    final sorted = _applySort(filtered, sort);
+    final sorted = _applySort(byCategory, sort);
 
     if (sorted.isEmpty) {
       return _EmptyState(filter: filter);
@@ -429,6 +528,111 @@ class _DownloadsTable extends ConsumerWidget {
         return source.where((t) => t.isError).toList();
     }
   }
+
+  /// Apply category filter on top of the status filter.
+  ///
+  /// We derive the category from the saved directory name. When a download
+  /// is added via `addUri(url, saveDir: categorySaveDir)`, aria2 returns
+  /// the resolved path in `task.dir`. We then match by directory name
+  /// (e.g. "Videos" / "Music") so users can route retroactively without
+  /// needing a `categoryId` field on every TaskSummary.
+  List<TaskSummary> _applyCategory(
+      List<TaskSummary> source, String? categoryId) {
+    if (categoryId == null) return source;
+    if (categoryId == '__none__') {
+      // Tasks whose dir is NOT one of the six default categories.
+      return source
+          .where((t) => !_matchesAnyDefaultCategory(t))
+          .toList();
+    }
+    final category = _defaultCategories
+        .firstWhere((c) => c.$1 == categoryId, orElse: () => ('', '', ''));
+    if (category.$1.isEmpty) return source;
+    final dirFragment = category.$2; // e.g. "Videos", "Music"
+    return source.where((t) => _belongsTo(t, dirFragment)).toList();
+  }
+
+  /// True iff `t.dir`'s last path segment equals [dirFragment] (case-insensitive,
+  /// Windows or POSIX separators).
+  ///
+  /// Matches:
+  ///   • `E:\download\Images`         → ends with `Images`
+  ///   • `E:\download\Images\`        → ends with `Images\`
+  ///   • `Images`                     → equals
+  ///   • `/download/Images`           → ends with `Images` / `Images/`
+  bool _belongsTo(TaskSummary t, String dirFragment) {
+    if (t.dir.isEmpty) return false;
+    final d = t.dir.toLowerCase();
+    final f = dirFragment.toLowerCase();
+    if (d == f) return true;
+    return d.endsWith(f) ||
+        d.endsWith('\\$f') ||
+        d.endsWith('/$f') ||
+        d.endsWith('\\$f\\') ||
+        d.endsWith('/$f/');
+  }
+
+  bool _matchesAnyDefaultCategory(TaskSummary t) {
+    for (final c in _defaultCategories) {
+      if (_belongsTo(t, c.$2)) return true;
+    }
+    return false;
+  }
+
+  /// (id, dirName, defaultSubDir) — kept tiny for the in-memory filter.
+  static const List<(String, String, String)> _defaultCategories = [
+    ('video', 'Videos', ''),
+    ('music', 'Music', ''),
+    ('archive', 'Archives', ''),
+    ('document', 'Documents', ''),
+    ('program', 'Programs', ''),
+    ('image', 'Images', ''),
+  ];
+}
+
+/// Top-level category specs — shared between filter + add-task save-dir.
+const List<_CategorySpec> _categorySpecs = [
+  _CategorySpec(
+    id: 'video',
+    dirName: 'Videos',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v'],
+  ),
+  _CategorySpec(
+    id: 'music',
+    dirName: 'Music',
+    extensions: ['.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a', '.opus'],
+  ),
+  _CategorySpec(
+    id: 'document',
+    dirName: 'Documents',
+    extensions: ['.pdf', '.doc', '.docx', '.txt', '.md', '.rtf', '.odt'],
+  ),
+  _CategorySpec(
+    id: 'archive',
+    dirName: 'Archives',
+    extensions: ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz'],
+  ),
+  _CategorySpec(
+    id: 'program',
+    dirName: 'Programs',
+    extensions: ['.exe', '.msi', '.dmg', '.deb', '.rpm', '.appimage'],
+  ),
+  _CategorySpec(
+    id: 'image',
+    dirName: 'Images',
+    extensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'],
+  ),
+];
+
+class _CategorySpec {
+  const _CategorySpec({
+    required this.id,
+    required this.dirName,
+    required this.extensions,
+  });
+  final String id;
+  final String dirName;
+  final List<String> extensions;
 }
 
 class _StatusChip extends StatelessWidget {
@@ -608,6 +812,20 @@ String _formatSpeed(int bytesPerSec) =>
 /// Cheap stand-in: gid is created at task add time; we don't persist the
 /// add timestamp in M4 history.json so we show gid suffix as a stand-in.
 String _relativeTime(TaskSummary t) {
-  final g = t.gid;
-  return g.length > 6 ? g.substring(g.length - 6) : g;
+  final ts = t.addedAt ?? t.completedAt;
+  if (ts == null) return '—';
+  final delta = DateTime.now().difference(ts);
+  if (delta.inSeconds.abs() < 60) return 'just now';
+  if (delta.inMinutes.abs() < 60) {
+    return '${delta.inMinutes.abs()} min ago';
+  }
+  if (delta.inHours.abs() < 24) {
+    return '${delta.inHours.abs()}h ago';
+  }
+  if (delta.inDays.abs() < 7) {
+    return '${delta.inDays.abs()}d ago';
+  }
+  final m = ts.month.toString().padLeft(2, '0');
+  final d = ts.day.toString().padLeft(2, '0');
+  return '${ts.year}-$m-$d';
 }

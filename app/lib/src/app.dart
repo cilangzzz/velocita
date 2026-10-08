@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'common_widgets/status_bar.dart';
 import 'localization/app_localizations.dart';
 import 'localization/locale_provider.dart';
 import 'routing/router.dart';
+import 'theme/theme_provider.dart';
 
 /// Top-level MaterialApp.router. The router is created once in
 /// `routing/router.dart` so it can be unit-tested in isolation.
@@ -15,6 +17,7 @@ class VelocitaApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final locale = ref.watch(localeProvider);
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       title: 'Velocita',
       debugShowCheckedModeBanner: false,
@@ -24,12 +27,13 @@ class VelocitaApp extends ConsumerWidget {
           .toList(),
       localizationsDelegates: const [
         _AppLocalizationsDelegate(),
-        DefaultMaterialLocalizations.delegate,
-        DefaultWidgetsLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
       ],
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
-      themeMode: ThemeMode.dark,
+      themeMode: themeMode,
       routerConfig: router,
       builder: (context, child) {
         return Scaffold(

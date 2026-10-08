@@ -21,6 +21,8 @@ class TaskSummary {
     required this.dir,
     this.errorCode,
     this.errorMessage,
+    this.addedAt,
+    this.completedAt,
   });
 
   final String gid;
@@ -32,6 +34,13 @@ class TaskSummary {
   final String dir;
   final String? errorCode;
   final String? errorMessage;
+
+  /// aria2 reports `addedAt` as epoch seconds. `null` when not yet known
+  /// (e.g. a freshly added task before the first refresh).
+  final DateTime? addedAt;
+
+  /// aria2 reports `completedAt` as epoch seconds. `null` until complete.
+  final DateTime? completedAt;
 
   double get progress => totalLength > 0 ? completedLength / totalLength : 0;
   bool get isActive => status == DownloadStatus.active;
@@ -47,6 +56,8 @@ class TaskSummary {
     int? downloadSpeed,
     String? errorCode,
     String? errorMessage,
+    DateTime? addedAt,
+    DateTime? completedAt,
   }) {
     return TaskSummary(
       gid: gid,
@@ -58,6 +69,8 @@ class TaskSummary {
       dir: dir,
       errorCode: errorCode ?? this.errorCode,
       errorMessage: errorMessage ?? this.errorMessage,
+      addedAt: addedAt ?? this.addedAt,
+      completedAt: completedAt ?? this.completedAt,
     );
   }
 }
@@ -121,6 +134,16 @@ TaskSummary taskFromAria2(Map<String, Object?> raw) {
         int.tryParse(raw['completedLength']?.toString() ?? '0') ?? 0;
   }
   filename = filename.isNotEmpty ? _basename(filename) : '(unnamed)';
+
+  // aria2 reports `addedAt` and `completedAt` as epoch seconds.
+  // Only `complete` tasks get a non-zero `completedAt`.
+  DateTime? _parseEpoch(Object? raw) {
+    if (raw == null) return null;
+    final secs = int.tryParse(raw.toString());
+    if (secs == null || secs <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(secs * 1000);
+  }
+
   return TaskSummary(
     gid: (raw['gid'] as String?) ?? '',
     filename: filename,
@@ -131,5 +154,7 @@ TaskSummary taskFromAria2(Map<String, Object?> raw) {
     dir: (raw['dir'] as String?) ?? '',
     errorCode: raw['errorCode'] as String?,
     errorMessage: raw['errorMessage'] as String?,
+    addedAt: _parseEpoch(raw['addedAt']),
+    completedAt: _parseEpoch(raw['completedAt']),
   );
 }

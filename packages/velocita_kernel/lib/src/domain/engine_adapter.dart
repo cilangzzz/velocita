@@ -18,6 +18,14 @@ abstract class EngineAdapter {
   /// Query a single task's full status.
   Future<Map<String, Object?>> tellStatus(String gid);
 
+  /// Query a single task's status with explicit keys (e.g. ['addedAt',
+  /// 'completedAt']). aria2 includes those fields only when explicitly
+  /// requested.
+  Future<Map<String, Object?>> tellStatusWithKeys(
+    String gid,
+    List<String> keys,
+  );
+
   /// List active (downloading) tasks.
   Future<List<Map<String, Object?>>> tellActive();
 

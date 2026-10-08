@@ -1,36 +1,61 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:velocita_kernel/velocita_kernel.dart';
 
+import '../../../localization/app_localizations.dart';
+import '../data/downloads_repository.dart';
+import '../domain/download_task.dart';
+
 /// Tabbed dialog for adding a new download: URL / Magnet / Torrent.
 ///
-/// M3 surface. Each tab has its own input + validation:
+/// M5 surface. Each tab has its own input + validation:
 ///   - URL:   http(s) URL field, validates scheme
 ///   - Magnet: magnet URI field, validates prefix
 ///   - Torrent: file picker + bytes preview
-class AddTaskDialog extends StatefulWidget {
-  const AddTaskDialog({super.key});
+///
+/// The dialog auto-resolves the save directory from:
+///   1. Caller-supplied [categoryId] (sidebar selection)
+///   2. URL/file extension (auto-categorization)
+///   3. None → caller uses its default
+class AddTaskDialog extends ConsumerStatefulWidget {
+  const AddTaskDialog({super.key, this.categoryId});
+
+  /// Optional id of the currently selected sidebar category.
+  final String? categoryId;
 
   @override
-  State<AddTaskDialog> createState() => _AddTaskDialogState();
+  ConsumerState<AddTaskDialog> createState() => _AddTaskDialogState();
 }
 
-class _AddTaskDialogState extends State<AddTaskDialog>
+class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   final _urlController = TextEditingController();
   final _magnetController = TextEditingController();
+  final _saveDirController = TextEditingController();
   final _urlFormKey = GlobalKey<FormState>();
   final _magnetFormKey = GlobalKey<FormState>();
   List<int>? _torrentBytes;
   String? _torrentName;
 
+  /// Cached "save to" preview line so we can show it live.
+  String _saveDirPreview = '';
+
+  /// When non-null, overrides [saveDirPreview]. The user typed a custom
+  /// path into the field — we use it verbatim instead of auto-resolving.
+  String? _customSaveDir;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _urlController.addListener(_recomputePreview);
+    _magnetController.addListener(_recomputePreview);
+    _saveDirController.addListener(_onCustomDirChanged);
+    _tabController.addListener(_recomputePreview);
   }
 
   @override
@@ -38,22 +63,103 @@ class _AddTaskDialogState extends State<AddTaskDialog>
     _tabController.dispose();
     _urlController.dispose();
     _magnetController.dispose();
+    _saveDirController.dispose();
     super.dispose();
   }
 
+  /// Auto-resolve saveDir from the URL or filename's extension. Falls
+  /// through to whatever the caller decides (typically the Downloads
+  /// root) when nothing matches.
+  String _resolveAutoSaveDir() {
+    final fallback = ref.read(downloadsRepositoryProvider).defaultSaveDir;
+    final candidates = <String>[
+      _urlController.text,
+      _magnetController.text,
+      _torrentName ?? '',
+    ];
+    for (final raw in candidates) {
+      if (raw.isEmpty) continue;
+      // Filename is the last path segment or the whole URI for non-paths.
+      final last = raw.split('/').last.split('?').first;
+      final ext = _extOf(last);
+      if (ext.isEmpty) continue;
+      for (final c in _defaultCategorySpecs) {
+        if (c.extensions.contains(ext)) {
+          return fallback == null
+              ? 'Downloads\\${c.dirName}'
+              : '$fallback\\${c.dirName}';
+        }
+      }
+    }
+    return fallback ?? 'Downloads';
+  }
+
+  String _extOf(String name) {
+    var i = name.length - 1;
+    while (i >= 0 && name[i] != '.') {
+      if (name[i] == '/' || name[i] == '\\') return '';
+      i--;
+    }
+    return i < 0 ? '' : name.substring(i).toLowerCase();
+  }
+
+  void _recomputePreview() {
+    final preview = _resolveAutoSaveDir();
+    // Don't clobber the user's custom input.
+    if (_customSaveDir == null) {
+      _saveDirController.text = preview;
+    }
+    if (preview != _saveDirPreview) {
+      setState(() {
+        _saveDirPreview = preview;
+      });
+    }
+  }
+
+  void _onCustomDirChanged() {
+    final v = _saveDirController.text.trim();
+    setState(() {
+      _customSaveDir = v.isEmpty ? null : v;
+    });
+  }
+
+  Future<void> _browseSaveDir() async {
+    // M5 placeholder: PowerShell-driven folder picker.
+    final process = await Process.start(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        'Add-Type -AssemblyName System.Windows.Forms; '
+            '\$f = New-Object System.Windows.Forms.FolderBrowserDialog; '
+            'if (\$f.ShowDialog() -eq "OK") { Write-Host \$f.SelectedPath }',
+      ],
+    );
+    final output =
+        await process.stdout.transform(const SystemEncoding().decoder).join();
+    await process.exitCode;
+    final path = output.trim();
+    if (path.isNotEmpty) {
+      _saveDirController.text = path;
+    }
+  }
+
   void _submit() {
+    final dir = _customSaveDir ?? _saveDirPreview;
     switch (_tabController.index) {
       case 0:
         if (!_urlFormKey.currentState!.validate()) return;
         Navigator.of(context).pop(SubmitResult(
           kind: SubmitKind.url,
           url: _urlController.text.trim(),
+          saveDir: dir,
         ));
       case 1:
         if (!_magnetFormKey.currentState!.validate()) return;
         Navigator.of(context).pop(SubmitResult(
           kind: SubmitKind.magnet,
           magnet: _magnetController.text.trim(),
+          saveDir: dir,
         ));
       case 2:
         if (_torrentBytes == null) return;
@@ -61,14 +167,17 @@ class _AddTaskDialogState extends State<AddTaskDialog>
           kind: SubmitKind.torrent,
           torrentBytes: _torrentBytes!,
           torrentName: _torrentName ?? 'file.torrent',
+          saveDir: dir,
         ));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    _recomputePreview();
+    final l = AppLocalizations.of(context);
     return AlertDialog(
-      title: const Text('Add Download'),
+      title: Text(l.addDownloadTask),
       content: SizedBox(
         width: 480,
         child: Column(
@@ -76,13 +185,13 @@ class _AddTaskDialogState extends State<AddTaskDialog>
           children: [
             TabBar(
               controller: _tabController,
-              tabs: const [
-                Tab(text: 'URL'),
-                Tab(text: 'Magnet'),
-                Tab(text: 'Torrent'),
+              tabs: [
+                Tab(text: l.tabUrl),
+                Tab(text: l.tabMagnet),
+                Tab(text: l.tabTorrent),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             SizedBox(
               height: 96,
               child: TabBarView(
@@ -94,41 +203,56 @@ class _AddTaskDialogState extends State<AddTaskDialog>
                 ],
               ),
             ),
+            const SizedBox(height: 8),
+            _SaveToField(
+              controller: _saveDirController,
+              preview: _saveDirPreview,
+              isCustom: _customSaveDir != null,
+              onBrowse: _browseSaveDir,
+              onClearCustom: () {
+                _customSaveDir = null;
+                _saveDirController.text = _resolveAutoSaveDir();
+                setState(() {});
+              },
+              saveToLabel: l.saveTo,
+              customLabel: l.customDirectory,
+            ),
           ],
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l.cancel),
         ),
         FilledButton(
           onPressed: _submit,
-          child: const Text('Download'),
+          child: Text(l.download),
         ),
       ],
     );
   }
 
   Widget _buildUrlTab() {
+    final l = AppLocalizations.of(context);
     return Form(
       key: _urlFormKey,
       child: TextFormField(
         controller: _urlController,
         autofocus: true,
-        decoration: const InputDecoration(
-          labelText: 'URL',
-          hintText: 'https://example.com/file.zip',
-          border: OutlineInputBorder(),
+        decoration: InputDecoration(
+          labelText: l.tabUrl,
+          hintText: l.urlHint,
+          border: const OutlineInputBorder(),
         ),
         keyboardType: TextInputType.url,
         validator: (value) {
           final s = (value ?? '').trim();
-          if (s.isEmpty) return 'URL is required';
+          if (s.isEmpty) return l.urlRequired;
           final uri = Uri.tryParse(s);
           if (uri == null ||
               !(uri.scheme == 'http' || uri.scheme == 'https')) {
-            return 'Must be an http(s) URL';
+            return l.urlInvalid;
           }
           return null;
         },
@@ -138,23 +262,24 @@ class _AddTaskDialogState extends State<AddTaskDialog>
   }
 
   Widget _buildMagnetTab() {
+    final l = AppLocalizations.of(context);
     return Form(
       key: _magnetFormKey,
       child: TextFormField(
         controller: _magnetController,
         autofocus: true,
         maxLines: 3,
-        decoration: const InputDecoration(
-          labelText: 'Magnet URI',
-          hintText: 'magnet:?xt=urn:btih:...',
-          border: OutlineInputBorder(),
+        decoration: InputDecoration(
+          labelText: l.magnetLabel,
+          hintText: l.magnetHint,
+          border: const OutlineInputBorder(),
         ),
         validator: (value) {
           final s = (value ?? '').trim();
-          if (!looksLikeMagnet(s)) return 'Must start with magnet:?';
+          if (!looksLikeMagnet(s)) return l.magnetInvalid;
           final parsed = parseMagnet(s);
           if (!parsed.hasBtih) {
-            return 'Missing urn:btih: exact-topic';
+            return l.magnetMissingBtih;
           }
           return null;
         },
@@ -164,6 +289,7 @@ class _AddTaskDialogState extends State<AddTaskDialog>
   }
 
   Widget _buildTorrentTab() {
+    final l = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -171,7 +297,7 @@ class _AddTaskDialogState extends State<AddTaskDialog>
           onPressed: _pickTorrent,
           icon: const Icon(Icons.folder_open),
           label: Text(
-            _torrentName == null ? 'Choose .torrent file' : _torrentName!,
+            _torrentName == null ? l.chooseTorrent : _torrentName!,
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -187,8 +313,6 @@ class _AddTaskDialogState extends State<AddTaskDialog>
   }
 
   Future<void> _pickTorrent() async {
-    // M3 placeholder: PowerShell-driven OpenFileDialog.
-    // M4 will swap to file_selector for a portable dialog.
     final process = await Process.start(
       'powershell',
       [
@@ -210,6 +334,84 @@ class _AddTaskDialogState extends State<AddTaskDialog>
       _torrentBytes = bytes;
       _torrentName = path.split(RegExp(r'[\\/]')).last;
     });
+    _recomputePreview();
+  }
+}
+
+/// Editable "save to" row. Shows the auto-resolved preview by default;
+/// once the user types anything it becomes the authoritative path.
+class _SaveToField extends StatelessWidget {
+  const _SaveToField({
+    required this.controller,
+    required this.preview,
+    required this.isCustom,
+    required this.onBrowse,
+    required this.onClearCustom,
+    required this.saveToLabel,
+    required this.customLabel,
+  });
+
+  final TextEditingController controller;
+  final String preview;
+  final bool isCustom;
+  final VoidCallback onBrowse;
+  final VoidCallback onClearCustom;
+  final String saveToLabel;
+  final String customLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.folder_outlined,
+                size: 14, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              '$saveToLabel:',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const Spacer(),
+            if (isCustom)
+              TextButton(
+                onPressed: onClearCustom,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(preview),
+              ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: l.saveToHint,
+                  border: const OutlineInputBorder(),
+                ),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: customLabel,
+              onPressed: onBrowse,
+              icon: const Icon(Icons.folder_open_outlined),
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 
@@ -222,6 +424,7 @@ class SubmitResult {
     this.magnet,
     this.torrentBytes,
     this.torrentName,
+    this.saveDir,
   });
 
   final SubmitKind kind;
@@ -229,4 +432,53 @@ class SubmitResult {
   final String? magnet;
   final List<int>? torrentBytes;
   final String? torrentName;
+
+  /// Auto-resolved (or caller-supplied) save directory.
+  final String? saveDir;
+}
+
+/// Same spec as `downloads_screen.dart`'s `_categorySpecs` but kept
+/// here to avoid a circular import.
+const List<_CategorySpec> _defaultCategorySpecs = [
+  _CategorySpec(
+    id: 'video',
+    dirName: 'Videos',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v'],
+  ),
+  _CategorySpec(
+    id: 'music',
+    dirName: 'Music',
+    extensions: ['.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a', '.opus'],
+  ),
+  _CategorySpec(
+    id: 'document',
+    dirName: 'Documents',
+    extensions: ['.pdf', '.doc', '.docx', '.txt', '.md', '.rtf', '.odt'],
+  ),
+  _CategorySpec(
+    id: 'archive',
+    dirName: 'Archives',
+    extensions: ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz'],
+  ),
+  _CategorySpec(
+    id: 'program',
+    dirName: 'Programs',
+    extensions: ['.exe', '.msi', '.dmg', '.deb', '.rpm', '.appimage'],
+  ),
+  _CategorySpec(
+    id: 'image',
+    dirName: 'Images',
+    extensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'],
+  ),
+];
+
+class _CategorySpec {
+  const _CategorySpec({
+    required this.id,
+    required this.dirName,
+    required this.extensions,
+  });
+  final String id;
+  final String dirName;
+  final List<String> extensions;
 }

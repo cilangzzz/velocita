@@ -133,6 +133,20 @@ class Aria2RpcClient implements EngineAdapter {
     return (result as Map).cast<String, Object?>();
   }
 
+  /// Variant that asks aria2 to include time fields that are only
+  /// returned when explicitly requested.
+  @override
+  Future<Map<String, Object?>> tellStatusWithKeys(
+    String gid,
+    List<String> keys,
+  ) async {
+    final proto = _requireProtocol();
+    final params = <Object?>[gid, keys];
+    _withSecretInPlace(params);
+    final result = await proto.call('aria2.tellStatus', params);
+    return (result as Map).cast<String, Object?>();
+  }
+
   @override
   Future<List<Map<String, Object?>>> tellActive() async {
     final proto = _requireProtocol();
