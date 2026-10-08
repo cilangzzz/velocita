@@ -132,10 +132,34 @@ class CategoriesNotifier extends AsyncNotifier<CategoriesState> {
   }
 
   Future<void> removeCategory(String id) async {
+    // Guard: default categories are protected.
+    final target = _categories.firstWhere(
+      (c) => c.id == id,
+      orElse: () => const Category(
+        id: '',
+        name: '',
+        defaultSaveDir: '',
+        extensions: [],
+      ),
+    );
+    if (target.id.isEmpty) return;
+    if (target.isDefault) return;
+    // Guard: parents with children must be emptied first. The UI
+    // disables the delete menu item in this case, but the notifier
+    // enforces the rule as well so a stray call is harmless.
+    final hasChildren = _categories.any((c) => c.parentId == id);
+    if (hasChildren) return;
+
     _categories = _categories.where((c) => c.id != id).toList();
     _rules.removeWhere((r) => r.categoryId == id);
     state = AsyncData(_snapshot());
     await _persist();
+  }
+
+  /// Convenience wrapper around the domain helper. `null` when the
+  /// host matches no category's [Category.sites] list.
+  Category? classifyBySite(String host) {
+    return cat_domain.classifyBySite(_categories, host);
   }
 
   Future<void> addRule(ClassificationRule r) async {

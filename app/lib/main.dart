@@ -9,6 +9,8 @@ import 'package:logging/logging.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'src/app.dart';
+import 'src/features/browser_integration/browser_integration.dart';
+import 'src/features/browser_integration/data/host_bridge.dart';
 import 'src/features/downloads/downloads.dart';
 import 'src/kernel_bridge/kernel_bootstrap.dart';
 import 'src/kernel_bridge/kernel_provider.dart';
@@ -40,6 +42,32 @@ Future<void> main() async {
     await windowManager.focus();
   });
 
+  // M6: try to bind the browser-integration port. If the bind fails
+  // (port already in use), we're a second instance — either a Native
+  // Messaging host invocation or a `velocita://…` deep-link wake-up.
+  // The bridge handles both, POSTs the payload into the running
+  // primary, and returns control for us to exit.
+  final browserService =
+      await BrowserIntegrationService.tryStart(port: 16800);
+  if (browserService == null) {
+    final forwarded = await runAsSecondInstance();
+    if (forwarded != null) {
+      Logger('Velocita.Main').info(
+        'second instance forwarded to primary (source=${forwarded.source})',
+      );
+    }
+    // Whether or not we forwarded something, the primary is running
+    // and the user wants to use IT, not us. Exit cleanly.
+    exit(0);
+  }
+
+  // M6: self-heal the Native Messaging host JSON. Cheap, idempotent;
+  // rewrites only when the existing path differs from the current
+  // `Platform.resolvedExecutable`. Keeps the registry-pointed JSON
+  // in sync with the binary even when `flutter run` moves the exe
+  // between builds.
+  await selfHeal();
+
   // Bootstrap the kernel (spawn aria2 → connect WS → emit EngineReady).
   // This returns once the engine is connected; a single instance is shared
   // for the app lifetime via the Riverpod provider.
@@ -47,6 +75,11 @@ Future<void> main() async {
   final container = ProviderContainer(overrides: [
     kernelProvider.overrideWithValue(kernel),
     downloadsRepositoryProvider.overrideWithValue(kernel.downloadsRepository),
+    // The controller takes ownership of this service. It will keep
+    // it running if the user's `enabled` setting is true, or stop
+    // it immediately if they toggled the feature off last session.
+    initialBrowserIntegrationServiceProvider
+        .overrideWithValue(browserService),
   ]);
 
   runApp(
@@ -56,3 +89,4 @@ Future<void> main() async {
     ),
   );
 }
+

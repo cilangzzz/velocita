@@ -1,10 +1,12 @@
 // Unit tests for the download-settings domain + provider.
 //
 // Covers the JSON round-trip (including backward compatibility with a
-// settings.json written before proxy fields existed) and the aria2
-// `all-proxy` URL building, which is the piece that encodes the
-// HTTP-only limitation of the engine.
+// settings.json written before proxy fields existed), the aria2
+// `all-proxy` URL building (HTTP-only limitation of the engine), and
+// the `changeGlobalOption` patch builder (must send numerics as
+// strings — aria2 silently drops integer values).
 import 'package:flutter_test/flutter_test.dart';
+import 'package:velocita/src/features/settings/data/download_settings_provider.dart';
 import 'package:velocita/src/features/settings/domain/download_settings.dart';
 
 void main() {
@@ -61,11 +63,23 @@ void main() {
         'saveDir': 'C:/dl',
         'maxConcurrentDownloads': 3,
         'maxOverallDownloadLimitBytesPerSec': 0,
+        'proxyKind': 'ftp',
+      });
+      expect(s.proxyKind, ProxyKind.off);
+    });
+
+    test('legacy socks5 config loads but degrades to no proxy at the engine',
+        () {
+      final s = DownloadSettings.fromJson({
+        'saveDir': 'C:/dl',
+        'maxConcurrentDownloads': 3,
+        'maxOverallDownloadLimitBytesPerSec': 0,
         'proxyKind': 'socks5',
         'proxyHost': '10.0.0.1',
         'proxyPort': 1080,
       });
-      expect(s.proxyKind, ProxyKind.off);
+      expect(s.proxyKind, ProxyKind.socks5);
+      expect(s.buildAllProxy(), '', reason: 'engine cannot honour SOCKS5');
     });
   });
 
@@ -139,6 +153,69 @@ void main() {
         proxyPort: 70000,
       );
       expect(s.buildAllProxy(), '');
+    });
+  });
+
+  group('buildGlobalOptionPatches', () {
+    const base = DownloadSettings(
+      saveDir: '/tmp',
+      maxConcurrentDownloads: 5,
+      maxOverallDownloadLimitBytesPerSec: 0,
+    );
+
+    test('numeric options are sent as STRINGS (aria2 drops ints)', () {
+      final to = base.copyWith(
+        maxConcurrentDownloads: 9,
+        maxOverallDownloadLimitBytesPerSec: 1024,
+      );
+      final patch = buildGlobalOptionPatches(base, to);
+      expect(patch['max-concurrent-downloads'], '9',
+          reason: 'int would be silently ignored by aria2');
+      expect(patch['max-overall-download-limit'], '1024',
+          reason: 'int would be silently ignored by aria2');
+    });
+
+    test('no patch when nothing changed', () {
+      expect(buildGlobalOptionPatches(base, base), isEmpty);
+    });
+
+    test('dir patch is a plain string path', () {
+      final to = base.copyWith(saveDir: r'E:\download');
+      final patch = buildGlobalOptionPatches(base, to);
+      expect(patch['dir'], r'E:\download');
+    });
+
+    test('enabling an HTTP proxy pushes all-proxy', () {
+      final to = base.copyWith(
+        proxyKind: ProxyKind.http,
+        proxyHost: '127.0.0.1',
+        proxyPort: 8080,
+      );
+      final patch = buildGlobalOptionPatches(base, to);
+      expect(patch['all-proxy'], 'http://127.0.0.1:8080');
+    });
+
+    test('disabling a proxy clears all-proxy', () {
+      final withProxy = base.copyWith(
+        proxyKind: ProxyKind.http,
+        proxyHost: '127.0.0.1',
+        proxyPort: 8080,
+        proxyBypass: 'localhost',
+      );
+      final patch = buildGlobalOptionPatches(withProxy, base);
+      expect(patch['all-proxy'], '');
+      expect(patch['no-proxy'], '');
+    });
+
+    test('socks5 produces no all-proxy patch', () {
+      final to = base.copyWith(
+        proxyKind: ProxyKind.socks5,
+        proxyHost: '127.0.0.1',
+        proxyPort: 1080,
+      );
+      final patch = buildGlobalOptionPatches(base, to);
+      expect(patch.containsKey('all-proxy'), isFalse,
+          reason: 'aria2 cannot honour SOCKS5; do not push it');
     });
   });
 }

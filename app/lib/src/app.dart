@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'common_widgets/status_bar.dart';
+import 'features/browser_integration/browser_integration.dart';
 import 'localization/app_localizations.dart';
 import 'localization/locale_provider.dart';
 import 'routing/router.dart';
@@ -36,9 +37,12 @@ class VelocitaApp extends ConsumerWidget {
       themeMode: themeMode,
       routerConfig: router,
       builder: (context, child) {
-        return Scaffold(
-          body: child,
-          bottomNavigationBar: const StatusBar(),
+        return PendingAddRequestListener(
+          navigatorKey: rootNavigatorKey,
+          child: Scaffold(
+            body: child,
+            bottomNavigationBar: const StatusBar(),
+          ),
         );
       },
     );

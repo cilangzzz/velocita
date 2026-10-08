@@ -45,6 +45,30 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/extensions/chrome/manifest.json
+    - assets/extensions/chrome/background.js
+    - assets/extensions/chrome/popup.html
+    - assets/extensions/chrome/popup.js
+    - assets/extensions/chrome/options.html
+    - assets/extensions/chrome/options.js
+    - assets/extensions/chrome/icons/
+    - assets/extensions/edge/manifest.json
+    - assets/extensions/edge/background.js
+    - assets/extensions/edge/popup.html
+    - assets/extensions/edge/popup.js
+    - assets/extensions/edge/options.html
+    - assets/extensions/edge/options.js
+    - assets/extensions/edge/icons/
+    - assets/extensions/firefox/manifest.json
+    - assets/extensions/firefox/background.js
+    - assets/extensions/firefox/popup.html
+    - assets/extensions/firefox/popup.js
+    - assets/extensions/firefox/options.html
+    - assets/extensions/firefox/options.js
+    - assets/extensions/firefox/icons/

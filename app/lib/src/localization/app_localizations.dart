@@ -27,6 +27,10 @@ class AppLocalizations {
   String get appTitle => _t(_catalog['appTitle']!);
   String get downloadsTab => _t(_catalog['downloadsTab']!);
   String get addTask => _t(_catalog['addTask']!);
+  String get pauseTask => _t(_catalog['pauseTask']!);
+  String get resumeTask => _t(_catalog['resumeTask']!);
+  String get openFolder => _t(_catalog['openFolder']!);
+  String get removeFromHistory => _t(_catalog['removeFromHistory']!);
   String get refresh => _t(_catalog['refresh']!);
   String get cancel => _t(_catalog['cancel']!);
   String get download => _t(_catalog['download']!);
@@ -133,6 +137,77 @@ class AppLocalizations {
       _t(_catalog['settingProxyApplied']!);
   String get settingNatOff => _t(_catalog['settingNatOff']!);
   String get settingNatUpnpOn => _t(_catalog['settingNatUpnpOn']!);
+  String get newCategory => _t(_catalog['newCategory']!);
+  String get newChildCategory => _t(_catalog['newChildCategory']!);
+  String get renameCategory => _t(_catalog['renameCategory']!);
+  String get editCategory => _t(_catalog['editCategory']!);
+  String get deleteCategory => _t(_catalog['deleteCategory']!);
+  String get categoryName => _t(_catalog['categoryName']!);
+  String get categoryIcon => _t(_catalog['categoryIcon']!);
+  String get categoryExtensions => _t(_catalog['categoryExtensions']!);
+  String get categoryExtensionsHint =>
+      _t(_catalog['categoryExtensionsHint']!);
+  String get categorySites => _t(_catalog['categorySites']!);
+  String get categorySitesHint => _t(_catalog['categorySitesHint']!);
+  String get categoryParent => _t(_catalog['categoryParent']!);
+  String get categorySaveDir => _t(_catalog['categorySaveDir']!);
+  String get deleteBlockedDefault =>
+      _t(_catalog['deleteBlockedDefault']!);
+  String get deleteBlockedNonEmpty =>
+      _t(_catalog['deleteBlockedNonEmpty']!);
+  String get confirmDeleteCategory =>
+      _t(_catalog['confirmDeleteCategory']!);
+  String get save => _t(_catalog['save']!);
+  String get batchOps => _t(_catalog['batchOps']!);
+  String get selectAll => _t(_catalog['selectAll']!);
+  String get invertSelection => _t(_catalog['invertSelection']!);
+  String get clearSelection => _t(_catalog['clearSelection']!);
+  String get selectedCount => _t(_catalog['selectedCount']!);
+  String get browserIntegration => _t(_catalog['browserIntegration']!);
+  String get browserIntegrationEnabled =>
+      _t(_catalog['browserIntegrationEnabled']!);
+  String get browserIntegrationEnabledHint =>
+      _t(_catalog['browserIntegrationEnabledHint']!);
+  String get browserIntegrationDisabled =>
+      _t(_catalog['browserIntegrationDisabled']!);
+  String get browserIntegrationStarting =>
+      _t(_catalog['browserIntegrationStarting']!);
+  String get browserIntegrationConfirm =>
+      _t(_catalog['browserIntegrationConfirm']!);
+  String get browserIntegrationConfirmHint =>
+      _t(_catalog['browserIntegrationConfirmHint']!);
+  String get browserIntegrationListening =>
+      _t(_catalog['browserIntegrationListening']!);
+  String get browserIntegrationInstallFailed =>
+      _t(_catalog['browserIntegrationInstallFailed']!);
+  String get installForChrome => _t(_catalog['installForChrome']!);
+  String get installForEdge => _t(_catalog['installForEdge']!);
+  String get installForFirefox => _t(_catalog['installForFirefox']!);
+  String get uninstallIntegration =>
+      _t(_catalog['uninstallIntegration']!);
+  String get installStepsChrome1 => _t(_catalog['installStepsChrome1']!);
+  String get installStepsChrome2 => _t(_catalog['installStepsChrome2']!);
+  String get installStepsChrome3 => _t(_catalog['installStepsChrome3']!);
+  String get installStepsChrome4 => _t(_catalog['installStepsChrome4']!);
+  String get installStepsEdge1 => _t(_catalog['installStepsEdge1']!);
+  String get installStepsEdge2 => _t(_catalog['installStepsEdge2']!);
+  String get installStepsEdge3 => _t(_catalog['installStepsEdge3']!);
+  String get installStepsEdge4 => _t(_catalog['installStepsEdge4']!);
+  String get installStepsFirefox1 =>
+      _t(_catalog['installStepsFirefox1']!);
+  String get installStepsFirefox2 =>
+      _t(_catalog['installStepsFirefox2']!);
+  String get installStepsFirefox3 =>
+      _t(_catalog['installStepsFirefox3']!);
+  String get installStepsFirefox4 =>
+      _t(_catalog['installStepsFirefox4']!);
+  String get browserIntegrationInstalledHint =>
+      _t(_catalog['browserIntegrationInstalledHint']!);
+  String browserIntegrationInstalledHintText(String browser) =>
+      _t(_catalog['browserIntegrationInstalledHint']!).replaceAll(
+            '{browser}',
+            browser,
+          );
 
   String _t(String key) {
     final tag = locale.countryCode != null
@@ -151,6 +226,10 @@ const Map<String, Map<String, String>> _strings = {
     'appTitle': 'Velocita',
     'downloadsTab': 'Downloads',
     'addTask': 'Add Task',
+    'pauseTask': 'Pause',
+    'resumeTask': 'Resume',
+    'openFolder': 'Open folder',
+    'removeFromHistory': 'Remove from history',
     'refresh': 'Refresh',
     'cancel': 'Cancel',
     'download': 'Download',
@@ -172,7 +251,7 @@ const Map<String, Map<String, String>> _strings = {
     'manageCategories': 'Manage categories',
     'engineConnected': 'Engine: Connected',
     'engineDisconnected': 'Engine: Disconnected',
-    'noDownloads': 'No downloads yet — click "Add URL".',
+    'noDownloads': 'No downloads yet — click "Add Task".',
     'noActive': 'No active downloads.',
     'noPaused': 'No paused downloads.',
     'noCompleted': 'No completed downloads.',
@@ -249,11 +328,81 @@ const Map<String, Map<String, String>> _strings = {
     'settingProxyApplied': 'Proxy applied to engine',
     'settingNatOff': 'Off',
     'settingNatUpnpOn': 'UPnP',
+    'newCategory': 'New category',
+    'newChildCategory': 'New sub-category',
+    'renameCategory': 'Rename',
+    'editCategory': 'Edit',
+    'deleteCategory': 'Delete',
+    'categoryName': 'Name',
+    'categoryIcon': 'Icon',
+    'categoryExtensions': 'File extensions',
+    'categoryExtensionsHint':
+        'e.g. .iso .img, separated by space or comma',
+    'categorySites': 'Default from these sites',
+    'categorySitesHint': 'One host per line, e.g. github.com',
+    'categoryParent': 'Parent category',
+    'categorySaveDir': 'Save folder',
+    'deleteBlockedDefault': 'Default categories cannot be deleted',
+    'deleteBlockedNonEmpty': 'Remove its sub-categories first',
+    'confirmDeleteCategory':
+        'Delete this category? Files on disk will be kept.',
+    'save': 'Save',
+    'batchOps': 'Batch operations',
+    'selectAll': 'Select all',
+    'invertSelection': 'Invert',
+    'clearSelection': 'Clear',
+    'selectedCount': 'N selected',
+    'browserIntegration': 'Browser integration',
+    'browserIntegrationEnabled': 'Enable browser integration',
+    'browserIntegrationEnabledHint':
+        'When on, Velocita listens on a local port and accepts downloads from Chrome / Edge / Firefox extensions. When off, no listening socket is opened.',
+    'browserIntegrationDisabled': 'Disabled — local IPC server is not running',
+    'browserIntegrationStarting': 'Starting…',
+    'browserIntegrationConfirm':
+        'Show confirmation popup for browser-sent downloads',
+    'browserIntegrationConfirmHint':
+        'When on, every download sent from a browser shows a dialog first. When off, the task is added to the queue immediately.',
+    'browserIntegrationListening':
+        'Velocita is listening on the local IPC port',
+    'browserIntegrationInstallFailed': 'Browser integration install failed',
+    'installForChrome': 'Install for',
+    'installForEdge': 'Install for',
+    'installForFirefox': 'Install for',
+    'uninstallIntegration': 'Uninstall',
+    'browserIntegrationInstalledHint':
+        'Native Messaging host registered. To finish installing the {browser} extension:',
+    'installStepsChrome1':
+        'Open chrome://extensions (we have opened it for you).',
+    'installStepsChrome2':
+        'Toggle "Developer mode" in the top-right corner.',
+    'installStepsChrome3':
+        'Click "Load unpacked" and pick the velocita/extensions/chrome folder.',
+    'installStepsChrome4':
+        'Right-click any link in Chrome then "Download with Velocita".',
+    'installStepsEdge1':
+        'Open edge://extensions (we have opened it for you).',
+    'installStepsEdge2':
+        'Toggle "Developer mode" in the bottom-left corner.',
+    'installStepsEdge3':
+        'Click "Load unpacked" and pick the velocita/extensions/edge folder.',
+    'installStepsEdge4':
+        'Right-click any link in Edge then "Download with Velocita".',
+    'installStepsFirefox1':
+        'Open about:debugging#/runtime/this-firefox (we have opened it for you).',
+    'installStepsFirefox2': 'Click "Load Temporary Add-on".',
+    'installStepsFirefox3':
+        'Pick the manifest.json inside velocita/extensions/firefox.',
+    'installStepsFirefox4':
+        'For permanent install, submit the extension to addons.mozilla.org.',
   },
   'zh-CN': {
     'appTitle': 'Velocita',
     'downloadsTab': '下载',
     'addTask': '添加下载任务',
+    'pauseTask': '暂停',
+    'resumeTask': '继续',
+    'openFolder': '打开所在文件夹',
+    'removeFromHistory': '从记录中删除',
     'refresh': '刷新',
     'cancel': '取消',
     'download': '下载',
@@ -275,7 +424,7 @@ const Map<String, Map<String, String>> _strings = {
     'manageCategories': '管理分类',
     'engineConnected': '引擎：已连接',
     'engineDisconnected': '引擎：未连接',
-    'noDownloads': '暂无下载 — 点击"添加 URL"。',
+    'noDownloads': '暂无下载 — 点击"添加下载任务"。',
     'noActive': '无下载中任务。',
     'noPaused': '无已暂停任务。',
     'noCompleted': '无已完成任务。',
@@ -348,6 +497,56 @@ const Map<String, Map<String, String>> _strings = {
     'settingProxyApplied': '代理已下发到引擎',
     'settingNatOff': '关闭',
     'settingNatUpnpOn': 'UPnP',
+    'newCategory': '新建分类',
+    'newChildCategory': '新建子分类',
+    'renameCategory': '重命名',
+    'editCategory': '编辑',
+    'deleteCategory': '删除',
+    'categoryName': '名称',
+    'categoryIcon': '图标',
+    'categoryExtensions': '文件扩展名',
+    'categoryExtensionsHint': '例如 .iso .img，空格或逗号分隔',
+    'categorySites': '来自以下站点的默认分类',
+    'categorySitesHint': '每行一个域名，例如 github.com',
+    'categoryParent': '父分类',
+    'categorySaveDir': '保存文件夹',
+    'deleteBlockedDefault': '默认分类不允许删除',
+    'deleteBlockedNonEmpty': '请先删除其子分类',
+    'confirmDeleteCategory': '确定删除该分类？磁盘上的文件将保留。',
+    'save': '保存',
+    'batchOps': '批量操作',
+    'selectAll': '全选',
+    'invertSelection': '反选',
+    'clearSelection': '取消选择',
+    'selectedCount': '已选 N 项',
+    'browserIntegration': '浏览器集成',
+    'browserIntegrationEnabled': '启用浏览器集成',
+    'browserIntegrationEnabledHint':
+        '开启时，Velocita 在本地端口监听，接收来自 Chrome / Edge / Firefox 扩展的下载；关闭时，不打开任何监听套接字。',
+    'browserIntegrationDisabled': '已禁用 — 本地 IPC 服务未运行',
+    'browserIntegrationStarting': '正在启动…',
+    'browserIntegrationConfirm': '对浏览器发来的下载显示确认弹窗',
+    'browserIntegrationConfirmHint':
+        '开启时，浏览器发来的每个下载都会先弹出确认框；关闭时直接入队。',
+    'browserIntegrationListening': 'Velocita 正在本地 IPC 端口监听',
+    'browserIntegrationInstallFailed': '浏览器集成安装失败',
+    'installForChrome': '安装到',
+    'installForEdge': '安装到',
+    'installForFirefox': '安装到',
+    'uninstallIntegration': '卸载',
+    'browserIntegrationInstalledHint': 'Native Messaging 主机已注册。要完成 {browser} 扩展的安装：',
+    'installStepsChrome1': '打开 chrome://extensions（已为你打开）。',
+    'installStepsChrome2': '在右上角打开"开发者模式"。',
+    'installStepsChrome3': '点击"加载已解压的扩展程序"，选择 velocita/extensions/chrome 文件夹。',
+    'installStepsChrome4': '在 Chrome 中右键任意链接，选择"使用 Velocita 下载"。',
+    'installStepsEdge1': '打开 edge://extensions（已为你打开）。',
+    'installStepsEdge2': '在左下角打开"开发人员模式"。',
+    'installStepsEdge3': '点击"加载解压缩的扩展"，选择 velocita/extensions/edge 文件夹。',
+    'installStepsEdge4': '在 Edge 中右键任意链接，选择"使用 Velocita 下载"。',
+    'installStepsFirefox1': '打开 about:debugging#/runtime/this-firefox（已为你打开）。',
+    'installStepsFirefox2': '点击"临时载入附加组件…"。',
+    'installStepsFirefox3': '选择 velocita/extensions/firefox 内的 manifest.json。',
+    'installStepsFirefox4': '如需永久安装，请提交到 addons.mozilla.org 签名。',
   },
 };
 
@@ -357,6 +556,10 @@ const Map<String, String> _catalog = {
   'appTitle': 'appTitle',
   'downloadsTab': 'downloadsTab',
   'addTask': 'addTask',
+  'pauseTask': 'pauseTask',
+  'resumeTask': 'resumeTask',
+  'openFolder': 'openFolder',
+  'removeFromHistory': 'removeFromHistory',
   'refresh': 'refresh',
   'cancel': 'cancel',
   'download': 'download',
@@ -450,4 +653,52 @@ const Map<String, String> _catalog = {
   'settingProxyApplied': 'settingProxyApplied',
   'settingNatOff': 'settingNatOff',
   'settingNatUpnpOn': 'settingNatUpnpOn',
+  'newCategory': 'newCategory',
+  'newChildCategory': 'newChildCategory',
+  'renameCategory': 'renameCategory',
+  'editCategory': 'editCategory',
+  'deleteCategory': 'deleteCategory',
+  'categoryName': 'categoryName',
+  'categoryIcon': 'categoryIcon',
+  'categoryExtensions': 'categoryExtensions',
+  'categoryExtensionsHint': 'categoryExtensionsHint',
+  'categorySites': 'categorySites',
+  'categorySitesHint': 'categorySitesHint',
+  'categoryParent': 'categoryParent',
+  'categorySaveDir': 'categorySaveDir',
+  'deleteBlockedDefault': 'deleteBlockedDefault',
+  'deleteBlockedNonEmpty': 'deleteBlockedNonEmpty',
+  'confirmDeleteCategory': 'confirmDeleteCategory',
+  'save': 'save',
+  'batchOps': 'batchOps',
+  'selectAll': 'selectAll',
+  'invertSelection': 'invertSelection',
+  'clearSelection': 'clearSelection',
+  'selectedCount': 'selectedCount',
+  'browserIntegration': 'browserIntegration',
+  'browserIntegrationEnabled': 'browserIntegrationEnabled',
+  'browserIntegrationEnabledHint': 'browserIntegrationEnabledHint',
+  'browserIntegrationDisabled': 'browserIntegrationDisabled',
+  'browserIntegrationStarting': 'browserIntegrationStarting',
+  'browserIntegrationConfirm': 'browserIntegrationConfirm',
+  'browserIntegrationConfirmHint': 'browserIntegrationConfirmHint',
+  'browserIntegrationListening': 'browserIntegrationListening',
+  'browserIntegrationInstallFailed': 'browserIntegrationInstallFailed',
+  'installForChrome': 'installForChrome',
+  'installForEdge': 'installForEdge',
+  'installForFirefox': 'installForFirefox',
+  'uninstallIntegration': 'uninstallIntegration',
+  'browserIntegrationInstalledHint': 'browserIntegrationInstalledHint',
+  'installStepsChrome1': 'installStepsChrome1',
+  'installStepsChrome2': 'installStepsChrome2',
+  'installStepsChrome3': 'installStepsChrome3',
+  'installStepsChrome4': 'installStepsChrome4',
+  'installStepsEdge1': 'installStepsEdge1',
+  'installStepsEdge2': 'installStepsEdge2',
+  'installStepsEdge3': 'installStepsEdge3',
+  'installStepsEdge4': 'installStepsEdge4',
+  'installStepsFirefox1': 'installStepsFirefox1',
+  'installStepsFirefox2': 'installStepsFirefox2',
+  'installStepsFirefox3': 'installStepsFirefox3',
+  'installStepsFirefox4': 'installStepsFirefox4',
 };

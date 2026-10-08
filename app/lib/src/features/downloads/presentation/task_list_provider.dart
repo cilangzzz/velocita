@@ -8,6 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import '../data/downloads_repository.dart';
 import '../domain/download_task.dart';
 
+/// Status filter applied to the visible task list (toolbar dropdown).
+enum DownloadFilter { all, active, paused, completed, error }
+
+/// Filter state — UI-only, lives here next to the task list it filters.
+final taskFilterProvider =
+    StateProvider<DownloadFilter>((ref) => DownloadFilter.all);
+
 /// The single source of truth for the downloads list in M5.
 ///
 /// Backed by:

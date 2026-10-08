@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Velocita</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+        margin: 0;
+        padding: 12px 14px;
+        width: 260px;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        display: inline-block;
+      }
+      .dot.on  { background: #2ea043; }
+      .dot.off { background: #999; }
+      button {
+        width: 100%;
+        padding: 8px 12px;
+        margin: 6px 0;
+        border: 1px solid #8885;
+        background: #1f6feb;
+        color: white;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button:hover { filter: brightness(1.1); }
+      button:disabled {
+        background: #8885; cursor: not-allowed;
+      }
+      a { color: #1f6feb; text-decoration: none; font-size: 12px; }
+      #status { font-size: 11px; color: #888; }
+    </style>
+  </head>
+  <body>
+    <h1>
+      <span class="dot" id="dot"></span>
+      <span>Velocita</span>
+    </h1>
+    <div id="status">checking…</div>
+    <button id="dl-page">Download current page</button>
+    <a href="#" id="options">Settings</a>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

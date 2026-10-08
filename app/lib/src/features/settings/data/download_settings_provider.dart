@@ -52,8 +52,10 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
   Future<void> _hydrateEngine(DownloadSettings s) async {
     final options = <String, Object?>{
       'dir': s.saveDir,
-      'max-concurrent-downloads': s.maxConcurrentDownloads,
-      'max-overall-download-limit': s.maxOverallDownloadLimitBytesPerSec,
+      // Strings, not ints — aria2's changeGlobalOption silently drops
+      // integer values for numeric options (verified 1.37.0).
+      'max-concurrent-downloads': '${s.maxConcurrentDownloads}',
+      'max-overall-download-limit': '${s.maxOverallDownloadLimitBytesPerSec}',
       'no-proxy': s.proxyBypass,
     };
     if (s.proxyKind == ProxyKind.http) {
@@ -135,49 +137,43 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
       proxyPassword: proxyPassword,
       proxyBypass: proxyBypass,
     );
-    final options = <String, Object?>{};
-    if (saveDir != null && saveDir != current.saveDir) {
-      options['dir'] = saveDir;
-    }
-    if (maxConcurrentDownloads != null &&
-        maxConcurrentDownloads != current.maxConcurrentDownloads) {
-      options['max-concurrent-downloads'] = maxConcurrentDownloads;
-    }
-    if (maxOverallDownloadLimitBytesPerSec != null &&
-        maxOverallDownloadLimitBytesPerSec !=
-            current.maxOverallDownloadLimitBytesPerSec) {
-      options['max-overall-download-limit'] =
-          maxOverallDownloadLimitBytesPerSec;
-    }
-    final proxyChanged = proxyKind != current.proxyKind ||
-        proxyHost != current.proxyHost ||
-        proxyPort != current.proxyPort ||
-        proxyUsername != current.proxyUsername ||
-        proxyPassword != current.proxyPassword;
-    // The bypassChanged branch is entered only when the caller passed a
-    // non-null `proxyBypass` that actually differs from the current one.
-    // Promote the param to a local so the analyzer can see the non-null
-    // invariant without the `?? ''` defensive fallback.
-    final newBypass =
-        proxyBypass != null && proxyBypass != current.proxyBypass
-            ? proxyBypass
-            : null;
-    if (proxyChanged || newBypass != null) {
-      final newAllProxy = next.buildAllProxy();
-      // aria2c only accepts HTTP proxy URLs through `changeGlobalOption`
-      // (verified 1.37.0); `buildAllProxy` returns '' for anything
-      // else, which doubles as "clear the proxy".
-      if (newAllProxy != current.buildAllProxy()) {
-        options['all-proxy'] = newAllProxy;
-      }
-      if (newBypass != null) {
-        options['no-proxy'] = newBypass;
-      }
-    }
+    final options = buildGlobalOptionPatches(current, next);
     if (options.isNotEmpty) {
       await ref.read(downloadsRepositoryProvider).changeGlobalOption(options);
     }
     state = AsyncData(next);
     await _persist(next);
   }
+}
+
+/// Compute the aria2 `changeGlobalOption` patch that turns [from] into
+/// [to]. Pure function so the coercion rules are unit-testable.
+///
+/// IMPORTANT (verified on aria2 1.37.0): `changeGlobalOption` silently
+/// IGNORES integer values for numeric options — `int 1024` reads back
+/// as `0`, while `"1024"` reads back as `1024`. Numerics are therefore
+/// always sent as strings.
+Map<String, Object?> buildGlobalOptionPatches(
+    DownloadSettings from, DownloadSettings to) {
+  final options = <String, Object?>{};
+  if (to.saveDir != from.saveDir) {
+    options['dir'] = to.saveDir;
+  }
+  if (to.maxConcurrentDownloads != from.maxConcurrentDownloads) {
+    options['max-concurrent-downloads'] = '${to.maxConcurrentDownloads}';
+  }
+  if (to.maxOverallDownloadLimitBytesPerSec !=
+      from.maxOverallDownloadLimitBytesPerSec) {
+    options['max-overall-download-limit'] =
+        '${to.maxOverallDownloadLimitBytesPerSec}';
+  }
+  // `buildAllProxy` returns '' for off / socks5 / incomplete, which
+  // doubles as "clear the proxy".
+  if (to.buildAllProxy() != from.buildAllProxy()) {
+    options['all-proxy'] = to.buildAllProxy();
+  }
+  if (to.proxyBypass != from.proxyBypass) {
+    options['no-proxy'] = to.proxyBypass;
+  }
+  return options;
 }

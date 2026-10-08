@@ -1,9 +1,12 @@
 // Widget tests for the DownloadsScreen + add-task flow.
 //
-// These tests stub `DownloadsRepository` so we don't need a live aria2.
+// These tests stub `DownloadsRepository` so we don't need a live aria2,
+// and they stub `CategoriesNotifier` so the sidebar tree can render
+// without a real `path_provider` channel.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:velocita/src/features/categories/categories.dart';
 import 'package:velocita/src/features/downloads/downloads.dart';
 
 class _FakeRepo implements DownloadsRepository {
@@ -43,6 +46,16 @@ class _FakeRepo implements DownloadsRepository {
   Future<void> changeGlobalOption(Map<String, Object?> options) async {}
 }
 
+/// Stand-in for the real [CategoriesNotifier] so the sidebar tree can
+/// render in tests without touching `getApplicationSupportDirectory`.
+class _FakeCategoriesNotifier extends CategoriesNotifier {
+  @override
+  Future<CategoriesState> build() async => CategoriesState(
+        categories: Category.defaults(r'C:\fake\downloads'),
+        rules: const [],
+      );
+}
+
 void main() {
   testWidgets('DownloadsScreen renders empty state with no tasks',
       (tester) async {
@@ -51,6 +64,7 @@ void main() {
       ProviderScope(
         overrides: [
           downloadsRepositoryProvider.overrideWithValue(repo),
+          categoriesProvider.overrideWith(_FakeCategoriesNotifier.new),
         ],
         child: const MaterialApp(
           home: Scaffold(body: DownloadsScreen()),
@@ -58,7 +72,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('No downloads yet — click "Add URL".'), findsOneWidget);
+    expect(find.text('No downloads yet — click "Add Task".'), findsOneWidget);
   });
 
   testWidgets('Add-task dialog opens and shows tabs', (tester) async {
@@ -67,6 +81,7 @@ void main() {
       ProviderScope(
         overrides: [
           downloadsRepositoryProvider.overrideWithValue(repo),
+          categoriesProvider.overrideWith(_FakeCategoriesNotifier.new),
         ],
         child: const MaterialApp(
           home: Scaffold(body: DownloadsScreen()),
@@ -74,9 +89,9 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Add URL'));
+    await tester.tap(find.text('Add Task'));
     await tester.pumpAndSettle();
-    expect(find.text('Add Download'), findsOneWidget);
+    expect(find.text('Add Download Task'), findsOneWidget);
     expect(find.text('URL'), findsWidgets);
     expect(find.text('Magnet'), findsOneWidget);
     expect(find.text('Torrent'), findsOneWidget);

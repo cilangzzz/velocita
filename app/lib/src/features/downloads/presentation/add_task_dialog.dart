@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:velocita_kernel/velocita_kernel.dart';
 
 import '../../../localization/app_localizations.dart';
+import '../../../features/categories/categories.dart';
 import '../data/downloads_repository.dart';
-import '../domain/download_task.dart';
 
 /// Tabbed dialog for adding a new download: URL / Magnet / Torrent.
 ///
@@ -20,11 +20,18 @@ import '../domain/download_task.dart';
 ///   1. Caller-supplied [categoryId] (sidebar selection)
 ///   2. URL/file extension (auto-categorization)
 ///   3. None → caller uses its default
+///
+/// [initialUrl] (M6+): when non-null, pre-populates the URL field and
+/// selects the URL tab. Used by the browser-extension integration to
+/// hand a URL over to the user for confirmation.
 class AddTaskDialog extends ConsumerStatefulWidget {
-  const AddTaskDialog({super.key, this.categoryId});
+  const AddTaskDialog({super.key, this.categoryId, this.initialUrl});
 
   /// Optional id of the currently selected sidebar category.
   final String? categoryId;
+
+  /// Optional pre-filled URL (M6 browser-integration surface).
+  final String? initialUrl;
 
   @override
   ConsumerState<AddTaskDialog> createState() => _AddTaskDialogState();
@@ -52,6 +59,14 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    // M6 browser-integration surface: when the dialog is opened from
+    // the queue (PendingAddRequestListener), the URL is prefilled and
+    // the URL tab is selected so the user can confirm/adjust immediately.
+    final prefilled = widget.initialUrl;
+    if (prefilled != null && prefilled.isNotEmpty) {
+      _urlController.text = prefilled;
+      _tabController.index = 0;
+    }
     _urlController.addListener(_recomputePreview);
     _magnetController.addListener(_recomputePreview);
     _saveDirController.addListener(_onCustomDirChanged);
@@ -67,16 +82,53 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
     super.dispose();
   }
 
-  /// Auto-resolve saveDir from the URL or filename's extension.
-  ///
-  /// Resolution order:
-  ///   1. URL/file extension matches a real category → that category's dir
-  ///   2. No extension match → fall back to `Other/` (catch-all)
-  ///   3. Caller-side fallback if [downloadsRepositoryProvider] is unset
+  /// Auto-resolve saveDir from the user input. Resolution chain:
+  ///   1. **Explicit category** (from the sidebar) → that category's dir
+  ///   2. **URL host** matches a category's [Category.sites] → that dir
+  ///   3. **Filename extension** matches a category's [Category.extensions]
+  ///   4. **Fallback**: the `other` category's dir, else the bare downloads dir
   String _resolveAutoSaveDir() {
-    final fallback = ref.read(downloadsRepositoryProvider).defaultSaveDir;
+    final fallback = ref.read(downloadsRepositoryProvider).defaultSaveDir ??
+        '';
+    final cats = ref
+            .watch(categoriesProvider)
+            .valueOrNull
+            ?.categories ??
+        const <Category>[];
+    final fallbackDir = fallback.isEmpty ? 'Downloads' : fallback;
+
+    // 1. Explicit category (only when provided by the caller).
+    final explicitId = widget.categoryId;
+    if (explicitId != null && explicitId != '__none__') {
+      final c = categoryById(cats, explicitId);
+      if (c != null) {
+        return resolvedSaveDir(
+          all: cats,
+          category: c,
+          defaultDownloadDir: fallbackDir,
+        );
+      }
+    }
+
+    // 2. Site match (URL host only; magnets / torrents have no host).
+    final urlText = _urlController.text.trim();
+    if (urlText.isNotEmpty) {
+      final host = Uri.tryParse(urlText)?.host ?? '';
+      if (host.isNotEmpty) {
+        final c = classifyBySite(cats, host);
+        if (c != null) {
+          return resolvedSaveDir(
+            all: cats,
+            category: c,
+            defaultDownloadDir: fallbackDir,
+          );
+        }
+      }
+    }
+
+    // 3. Extension match on whichever input the user is editing.
     final candidates = <String>[
-      _urlController.text,
+      urlText,
       _magnetController.text,
       _torrentName ?? '',
     ];
@@ -87,21 +139,26 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
       final last = raw.split('/').last.split('?').first;
       final ext = _extOf(last);
       if (ext.isEmpty) continue;
-      for (final c in _defaultCategorySpecs) {
-        if (c.extensions.isEmpty) continue; // skip "Other" catch-all
+      for (final c in cats) {
         if (c.extensions.contains(ext)) {
-          return fallback == null
-              ? 'Downloads\\${c.dirName}'
-              : '$fallback\\${c.dirName}';
+          return resolvedSaveDir(
+            all: cats,
+            category: c,
+            defaultDownloadDir: fallbackDir,
+          );
         }
       }
     }
-    // No extension match → land in `Other/`. If the user has not typed
-    // anything yet, fall back to the bare downloads dir.
-    if (lastCandidate == null || lastCandidate.trim().isEmpty) {
-      return fallback ?? 'Downloads';
+
+    // 4. Fallback → `other` category, then the bare downloads dir.
+    final other = categoryById(cats, 'other');
+    if (other != null && other.defaultSaveDir.isNotEmpty) {
+      return other.defaultSaveDir;
     }
-    return fallback == null ? 'Downloads\\Other' : '$fallback\\Other';
+    if (lastCandidate == null || lastCandidate.trim().isEmpty) {
+      return fallbackDir;
+    }
+    return fallbackDir;
   }
 
   String _extOf(String name) {
@@ -442,50 +499,6 @@ class SubmitResult {
 }
 
 /// Top-level category specs used for both filter + add-task save-dir.
-const List<_CategorySpec> _defaultCategorySpecs = [
-  _CategorySpec(
-    id: 'video',
-    dirName: 'Videos',
-    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v'],
-  ),
-  _CategorySpec(
-    id: 'music',
-    dirName: 'Music',
-    extensions: ['.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a', '.opus'],
-  ),
-  _CategorySpec(
-    id: 'document',
-    dirName: 'Documents',
-    extensions: ['.pdf', '.doc', '.docx', '.txt', '.md', '.rtf', '.odt'],
-  ),
-  _CategorySpec(
-    id: 'archive',
-    dirName: 'Archives',
-    extensions: ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz'],
-  ),
-  _CategorySpec(
-    id: 'program',
-    dirName: 'Programs',
-    extensions: ['.exe', '.msi', '.dmg', '.deb', '.rpm', '.appimage'],
-  ),
-  _CategorySpec(
-    id: 'image',
-    dirName: 'Images',
-    extensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'],
-  ),
-  // Catch-all: anything whose extension doesn't match the 6 above lands
-  // here. Has no extension list so it can never "win" the auto-detect;
-  // instead we use it as the fallback bucket.
-  _CategorySpec(id: 'other', dirName: 'Other', extensions: const []),
-];
-
-class _CategorySpec {
-  const _CategorySpec({
-    required this.id,
-    required this.dirName,
-    required this.extensions,
-  });
-  final String id;
-  final String dirName;
-  final List<String> extensions;
-}
+///
+/// Previously duplicated the seed-category metadata; now the dialog
+/// reads directly from [categoriesProvider], so this constant is gone.

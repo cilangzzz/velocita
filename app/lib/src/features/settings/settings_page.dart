@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../localization/app_localizations.dart';
 import '../../localization/locale_provider.dart';
 import '../../theme/theme_provider.dart';
+import '../browser_integration/browser_integration.dart';
 import 'data/download_settings_provider.dart';
 import 'domain/download_settings.dart';
 
@@ -87,6 +88,8 @@ class SettingsPage extends ConsumerWidget {
         _Section(title: l.connection),
         const _ProxyTile(),
         const _NatUpnpTile(),
+        const Divider(),
+        const BrowserIntegrationSection(),
       ],
     );
   }

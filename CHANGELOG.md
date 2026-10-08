@@ -2,6 +2,87 @@
 
 All notable changes to Velocita are documented here. Dates in `YYYY-MM-DD`.
 
+## 2026-10-08 — M6: Browser integration (Native Messaging + velocita://)
+
+### Added
+
+- **M6** — Chrome / Edge / Firefox extensions plus a local IPC service
+  that turns the browser into a first-class download source.
+  - `BrowserIntegrationService`: loopback HTTP server on
+    `127.0.0.1:16800` with `GET /api/ping`, `POST /api/add`,
+    `POST /api/host`, `POST /api/deeplink`. CORS echoes
+    `chrome-extension://` / `moz-extension://` origins.
+  - Single-instance detection via the 16800 bind race: bind succeeds →
+    primary; bind fails → 200ms stdin-vs-`app_links`-initial-URI race in
+    `host_bridge.dart`, POST the payload into the primary, write a
+    JSON ack to stdout (NM case), exit.
+  - `NativeMessagingHost` (pure Dart, no deps) reads / writes
+    4-byte LE uint32 length-prefixed UTF-8 JSON frames per the Chrome
+    Native Messaging spec.
+  - `host_installer` writes `com.velocita.host.json` plus the three
+    `HKCU\…\NativeMessagingHosts\com.velocita.host` registry keys
+    for Chrome / Edge / Firefox.
+  - `PendingAddRequestListener` (mounted in `app.dart`'s `builder`)
+    consumes the service's `Stream<AddRequest>`, opens the existing
+    `AddTaskDialog` with the URL prefilled (or silently calls
+    `taskListProvider.notifier.addUri` when the user disables the
+    "show confirmation" toggle in Settings).
+  - `BrowserIntegrationSection` in Settings: "Install for {Chrome,
+    Edge, Firefox}" buttons, "Uninstall", live status line, the
+    toggle.
+  - Cross-browser MV3 + WebExtension source in
+    `browser_extension/src/`; `tools/build_extensions.dart` stages
+    it into `app/assets/extensions/{chrome,edge,firefox}/` for
+    bundling via `pubspec.yaml`'s `assets:` section.
+  - 8 new i18n keys in `AppLocalizations` for both `en` and
+    `zh-CN`.
+  - 5 new unit tests (NM host: 7 cases; service: 8; settings
+    JSON: 6; AddRequest enum: 2). `flutter test` now 77 passing.
+  - `docs/browser_integration.md` — flow diagram + manual QA
+    matrix.
+
+### Files
+
+```
+app/lib/src/features/browser_integration/
+├── browser_integration.dart                barrel
+├── domain/
+│   ├── add_request.dart
+│   └── browser_integration_settings.dart
+├── data/
+│   ├── browser_integration_service.dart
+│   ├── host_bridge.dart
+│   ├── host_installer.dart
+│   ├── host_installer_windows.dart
+│   ├── browser_integration_settings_provider.dart
+│   ├── native_messaging_host.dart
+│   └── pending_add_requests_provider.dart
+└── presentation/
+    ├── browser_integration_section.dart
+    ├── install_instructions_dialog.dart
+    └── pending_add_request_listener.dart
+app/lib/main.dart                           MOD — bind race + self-heal
+app/lib/src/app.dart                        MOD — wrap builder in listener
+app/lib/src/routing/router.dart             MOD — rootNavigatorKey
+app/lib/src/features/downloads/presentation/add_task_dialog.dart  MOD — initialUrl
+app/lib/src/features/settings/settings_page.dart                  MOD — section
+app/lib/src/localization/app_localizations.dart                    MOD — 8 keys
+app/pubspec.yaml                                                  MOD — assets
+app/assets/extensions/{chrome,edge,firefox}/                       NEW (built)
+app/test/{browser_integration_service,settings,native_messaging_host,add_request}_test.dart
+browser_extension/src/{manifest.*.json,background.js,popup.*,options.*,icons/}
+tools/build_extensions.dart
+docs/browser_integration.md
+```
+
+### Known limitations
+
+- Linux / macOS per-browser manifest locations are not implemented
+  (Windows HKCU only). Documented in `docs/browser_integration.md`.
+- Firefox permanent install requires AMO signing; v1 is "Load
+  Temporary Add-on" only.
+- No cookie / auth passthrough — URL + referer + tabTitle only.
+
 ## 2026-09-30 — M0 → M5 prototype
 
 > Source: synthesized from the 12-rule Flutter code-design doc and the

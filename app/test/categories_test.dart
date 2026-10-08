@@ -4,9 +4,9 @@ import 'package:velocita/src/features/categories/categories.dart';
 
 void main() {
   group('Category.defaults', () {
-    test('produces 6 default categories', () {
+    test('produces 7 default categories (6 + Other catch-all)', () {
       final cats = Category.defaults(r'C:\Users\test\Downloads');
-      expect(cats.length, 6);
+      expect(cats.length, 7);
       expect(cats.every((c) => c.isDefault), isTrue);
       // Every category's saveDir is inside the parent.
       for (final c in cats) {
@@ -15,6 +15,13 @@ void main() {
           contains(r'c:\users\test\downloads'),
         );
       }
+    });
+
+    test('the "other" category is a default catch-all with no extensions', () {
+      final cats = Category.defaults(r'/tmp');
+      final other = cats.firstWhere((c) => c.id == 'other');
+      expect(other.isDefault, isTrue);
+      expect(other.extensions, isEmpty);
     });
 
     test('extensions are lowercased', () {
@@ -135,6 +142,192 @@ void main() {
     test('Category.defaults classify by extension', () {
       final cats = Category.defaults(r'C:\Users\test\Downloads');
       expect(cats.isNotEmpty, isTrue);
+    });
+  });
+
+  // ── Tree helpers ────────────────────────────────────────────
+  // Minimal hand-built category lists so the tests are independent
+  // from Category.defaults.
+  Category cat(
+    String id, {
+    String? parentId,
+    String dir = '',
+    List<String> exts = const [],
+    List<String> sites = const [],
+    bool isDefault = false,
+  }) =>
+      Category(
+        id: id,
+        name: id,
+        parentId: parentId,
+        defaultSaveDir: dir,
+        extensions: exts,
+        sites: sites,
+        isDefault: isDefault,
+      );
+
+  group('rootCategories / childrenOf / categoryById / ancestors', () {
+    final all = [
+      cat('root1', dir: r'C:\dl\a'),
+      cat('root2', dir: r'C:\dl\b'),
+      cat('child1', parentId: 'root1', dir: r'C:\dl\a\c1'),
+      cat('grand', parentId: 'child1', dir: r'C:\dl\a\c1\g'),
+    ];
+
+    test('rootCategories returns only top-level', () {
+      final roots = rootCategories(all);
+      expect(roots.map((c) => c.id).toSet(), {'root1', 'root2'});
+    });
+
+    test('childrenOf returns direct children only', () {
+      final kids = childrenOf(all, 'root1');
+      expect(kids.map((c) => c.id), ['child1']);
+    });
+
+    test('categoryById returns null for unknown ids', () {
+      expect(categoryById(all, 'nope'), isNull);
+      expect(categoryById(all, 'grand')?.id, 'grand');
+    });
+
+    test('ancestors walks parentId chain to root', () {
+      final chain = ancestors(all, 'grand').map((c) => c.id).toList();
+      expect(chain, ['root1', 'child1']);
+    });
+  });
+
+  group('resolvedSaveDir', () {
+    final all = [
+      cat('root', dir: r'C:\dl\root'),
+      cat('mid', parentId: 'root', dir: r'C:\dl\root\mid'),
+      cat('leaf', parentId: 'mid', dir: ''), // empty → falls back
+    ];
+
+    test('uses own dir when set', () {
+      final c = all.firstWhere((c) => c.id == 'root');
+      expect(
+        resolvedSaveDir(all: all, category: c, defaultDownloadDir: r'C:\dl'),
+        r'C:\dl\root',
+      );
+    });
+
+    test('falls back through empty ancestors', () {
+      final c = all.firstWhere((c) => c.id == 'leaf');
+      expect(
+        resolvedSaveDir(all: all, category: c, defaultDownloadDir: r'C:\dl'),
+        r'C:\dl\root\mid',
+      );
+    });
+
+    test('falls back to defaultDownloadDir when nothing is set', () {
+      final lone = [cat('orphan', dir: '')];
+      expect(
+        resolvedSaveDir(
+            all: lone, category: lone.first, defaultDownloadDir: r'C:\dl'),
+        r'C:\dl',
+      );
+    });
+  });
+
+  group('deepestCategoryForDir', () {
+    final all = [
+      cat('video', dir: r'C:\dl\Videos'),
+      cat('video-sd', parentId: 'video', dir: r'C:\dl\Videos\SD'),
+      cat('other', dir: r'C:\dl\Other'),
+    ];
+
+    test('matches a direct hit', () {
+      final c = deepestCategoryForDir(all, r'C:\dl\Videos');
+      expect(c?.id, 'video');
+    });
+
+    test('child wins over its ancestor', () {
+      final c = deepestCategoryForDir(all, r'C:\dl\Videos\SD\movie.mp4');
+      expect(c?.id, 'video-sd');
+    });
+
+    test('returns null for a dir outside any category', () {
+      expect(deepestCategoryForDir(all, r'C:\elsewhere'), isNull);
+      expect(deepestCategoryForDir(all, ''), isNull);
+    });
+
+    test('matches case-insensitively and tolerates trailing slashes', () {
+      final c = deepestCategoryForDir(all, r'c:\dl\videos\');
+      expect(c?.id, 'video');
+    });
+  });
+
+  group('categoryIncludesDir', () {
+    final all = [
+      cat('video', dir: r'C:\dl\Videos'),
+      cat('video-sd', parentId: 'video', dir: r'C:\dl\Videos\SD'),
+    ];
+
+    test('a child category matches its descendant dirs', () {
+      expect(
+        categoryIncludesDir(all, 'video', r'C:\dl\Videos\SD\movie.mp4'),
+        isTrue,
+      );
+    });
+
+    test('a parent category aggregates its children', () {
+      expect(
+        categoryIncludesDir(all, 'video', r'C:\dl\Videos\SD'),
+        isTrue,
+      );
+    });
+
+    test('returns false for unrelated dirs', () {
+      expect(
+        categoryIncludesDir(all, 'video', r'C:\dl\Other\file'),
+        isFalse,
+      );
+    });
+  });
+
+  group('classifyBySite', () {
+    final all = [
+      cat('code', dir: r'C:\dl\Code', sites: ['github.com', 'gitlab.com']),
+      cat('books', dir: r'C:\dl\Books', sites: ['zlib.org']),
+    ];
+
+    test('matches an exact host', () {
+      expect(classifyBySite(all, 'github.com')?.id, 'code');
+    });
+
+    test('matches a subdomain', () {
+      expect(classifyBySite(all, 'www.github.com')?.id, 'code');
+    });
+
+    test('is case-insensitive', () {
+      expect(classifyBySite(all, 'GITHUB.COM')?.id, 'code');
+    });
+
+    test('returns null when no category lists the host', () {
+      expect(classifyBySite(all, 'example.com'), isNull);
+    });
+
+    test('strips scheme/path/port from the input', () {
+      expect(classifyBySite(all, 'https://github.com/x?y=1')?.id, 'code');
+      expect(classifyBySite(all, 'github.com:443')?.id, 'code');
+    });
+  });
+
+  group('dirMatchesAnyCategory', () {
+    final all = [
+      cat('video', dir: r'C:\dl\Videos'),
+      cat('other', dir: r'C:\dl\Other'),
+    ];
+
+    test('true when one category claims the dir', () {
+      expect(dirMatchesAnyCategory(all, r'C:\dl\Videos\x.mp4'), isTrue);
+    });
+
+    test('false when no category claims the dir', () {
+      expect(dirMatchesAnyCategory(all, r'C:\elsewhere'), isFalse);
+    });
+
+    test('empty dir never matches', () {
+      expect(dirMatchesAnyCategory(all, ''), isFalse);
     });
   });
 }

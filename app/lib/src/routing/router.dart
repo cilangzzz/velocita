@@ -8,12 +8,17 @@ import '../features/scheduler/scheduler.dart' as scheduler;
 import '../features/settings/settings.dart' as settings;
 import '../localization/app_localizations.dart';
 
+/// Global navigator key — used by the browser-integration listener to
+/// open the [AddTaskDialog] from outside any specific route.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 /// The single source of truth for navigation. Built once at startup.
 ///
 /// Layout: `[NavigationRail | Body]` — both children scroll independently.
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
+    navigatorKey: rootNavigatorKey,
     routes: [
       ShellRoute(
         builder: (context, state, child) => _ShellLayout(child: child),
