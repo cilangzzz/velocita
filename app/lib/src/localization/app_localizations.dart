@@ -137,6 +137,14 @@ class AppLocalizations {
       _t(_catalog['settingProxyApplied']!);
   String get settingNatOff => _t(_catalog['settingNatOff']!);
   String get settingNatUpnpOn => _t(_catalog['settingNatUpnpOn']!);
+  String get settingSplit => _t(_catalog['settingSplit']!);
+  String get settingSplitHint => _t(_catalog['settingSplitHint']!);
+  String get settingSplitAppliesToNew =>
+      _t(_catalog['settingSplitAppliesToNew']!);
+  String get settingMaxConnPerServer =>
+      _t(_catalog['settingMaxConnPerServer']!);
+  String get settingMaxConnPerServerHint =>
+      _t(_catalog['settingMaxConnPerServerHint']!);
   String get newCategory => _t(_catalog['newCategory']!);
   String get newChildCategory => _t(_catalog['newChildCategory']!);
   String get renameCategory => _t(_catalog['renameCategory']!);
@@ -187,6 +195,7 @@ class AppLocalizations {
       _t(_catalog['browserIntegrationGenerateRegFile']!);
   String get browserIntegrationRegFileWritten =>
       _t(_catalog['browserIntegrationRegFileWritten']!);
+  String get copy => _t(_catalog['copy']!);
   String get browserIntegrationConfirm =>
       _t(_catalog['browserIntegrationConfirm']!);
   String get browserIntegrationConfirmHint =>
@@ -343,6 +352,14 @@ const Map<String, Map<String, String>> _strings = {
     'settingProxyApplied': 'Proxy applied to engine',
     'settingNatOff': 'Off',
     'settingNatUpnpOn': 'UPnP',
+    'settingSplit': 'Connections per file',
+    'settingSplitHint':
+        'How many parallel ranges aria2 splits each file into (HTTP/FTP)',
+    'settingSplitAppliesToNew':
+        'Applies to new downloads — already-running tasks keep their layout',
+    'settingMaxConnPerServer': 'Max connections per server',
+    'settingMaxConnPerServerHint':
+        'Cap on concurrent connections to the same server',
     'newCategory': 'New category',
     'newChildCategory': 'New sub-category',
     'renameCategory': 'Rename',
@@ -387,6 +404,7 @@ const Map<String, Map<String, String>> _strings = {
     'browserIntegrationGenerateRegFile': 'Generate registry file…',
     'browserIntegrationRegFileWritten':
         'Registry file written — double-click it in Explorer to install.',
+    'copy': 'Copy',
     'browserIntegrationConfirm':
         'Show confirmation popup for browser-sent downloads',
     'browserIntegrationConfirmHint':
@@ -526,6 +544,11 @@ const Map<String, Map<String, String>> _strings = {
     'settingProxyApplied': '代理已下发到引擎',
     'settingNatOff': '关闭',
     'settingNatUpnpOn': 'UPnP',
+    'settingSplit': '单文件并发连接数',
+    'settingSplitHint': 'aria2 把每个文件切成的并行段数（HTTP/FTP）',
+    'settingSplitAppliesToNew': '仅对新建下载生效，已在跑的任务不会重新分块',
+    'settingMaxConnPerServer': '每服务器最大连接数',
+    'settingMaxConnPerServerHint': '对同一服务器的最大并发连接数上限',
     'newCategory': '新建分类',
     'newChildCategory': '新建子分类',
     'renameCategory': '重命名',
@@ -567,6 +590,7 @@ const Map<String, Map<String, String>> _strings = {
     'browserIntegrationStarting': '正在启动…',
     'browserIntegrationGenerateRegFile': '生成注册表文件…',
     'browserIntegrationRegFileWritten': '注册表文件已生成 — 在资源管理器中双击即可安装。',
+    'copy': '复制',
     'browserIntegrationConfirm': '对浏览器发来的下载显示确认弹窗',
     'browserIntegrationConfirmHint':
         '开启时，浏览器发来的每个下载都会先弹出确认框；关闭时直接入队。',
@@ -695,6 +719,11 @@ const Map<String, String> _catalog = {
   'settingProxyApplied': 'settingProxyApplied',
   'settingNatOff': 'settingNatOff',
   'settingNatUpnpOn': 'settingNatUpnpOn',
+  'settingSplit': 'settingSplit',
+  'settingSplitHint': 'settingSplitHint',
+  'settingSplitAppliesToNew': 'settingSplitAppliesToNew',
+  'settingMaxConnPerServer': 'settingMaxConnPerServer',
+  'settingMaxConnPerServerHint': 'settingMaxConnPerServerHint',
   'newCategory': 'newCategory',
   'newChildCategory': 'newChildCategory',
   'renameCategory': 'renameCategory',
@@ -735,6 +764,7 @@ const Map<String, String> _catalog = {
   'browserIntegrationStarting': 'browserIntegrationStarting',
   'browserIntegrationGenerateRegFile': 'browserIntegrationGenerateRegFile',
   'browserIntegrationRegFileWritten': 'browserIntegrationRegFileWritten',
+  'copy': 'copy',
   'browserIntegrationConfirm': 'browserIntegrationConfirm',
   'browserIntegrationConfirmHint': 'browserIntegrationConfirmHint',
   'browserIntegrationListening': 'browserIntegrationListening',

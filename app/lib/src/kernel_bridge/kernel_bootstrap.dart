@@ -55,6 +55,18 @@ Future<KernelFacade> bootstrapKernel() async {
       '--log=${dataDir.path}/aria2.log',
       '--log-level=warn',
       '--no-conf=true',
+      // Split each file into 5 ranges AND let up to 5 connections hit
+      // the same server. aria2's effective per-task connection count is
+      // `min(split, max-connection-per-server)`, so both must be raised
+      // together or aria2 silently caps at the smaller value (default
+      // `max-connection-per-server=1` would make `split=5` a no-op).
+      // Also lower `min-split-size` from its 20 MiB default: aria2
+      // refuses to create a range smaller than 2*min-split-size, so
+      // without this 5-way splitting is silently a no-op on any file
+      // smaller than ~100 MiB.
+      '--split=5',
+      '--max-connection-per-server=5',
+      '--min-split-size=1M',
     ];
 
     // If the user persisted a proxy last session, inject it on the

@@ -10,8 +10,8 @@
 //   app/assets/extensions/edge/      — manifest.edge.json renamed
 //   app/assets/extensions/firefox/   — manifest.firefox.json renamed
 //
-// The three targets share background.js, popup.html/js, options.html/js,
-// and icons/. The only thing that varies is the manifest.
+// The three targets share background.js, content/, icons/, popup.*,
+// options.*. The only thing that varies is the manifest.
 //
 // This script uses only dart:io so it has no package deps and can be
 // invoked from any cwd.
@@ -36,33 +36,25 @@ void main(List<String> args) {
     if (dst.existsSync()) dst.deleteSync(recursive: true);
     dst.createSync(recursive: true);
 
-    for (final entity in src.listSync()) {
+    for (final entity in src.listSync(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
-      final name = _basename(entity.path);
-      if (name == target.manifestName) {
-        // Rename to manifest.json in the target folder.
-        File('${dst.path}/manifest.json')
-            .writeAsStringSync(entity.readAsStringSync());
-      } else if (name.startsWith('manifest.')) {
-        // Skip other browsers' manifest templates.
-        continue;
-      } else {
-        // Copy as bytes — JS / HTML are UTF-8 text but reading them
-        // as bytes handles icons and any future binary asset too.
-        File('${dst.path}/$name')
-            .writeAsBytesSync(entity.readAsBytesSync());
-      }
-    }
-    // Copy the icons subdir verbatim.
-    final srcIcons = Directory('${src.path}/icons');
-    if (srcIcons.existsSync()) {
-      final dstIcons = Directory('${dst.path}/icons')..createSync(recursive: true);
-      for (final f in srcIcons.listSync()) {
-        if (f is File) {
-          File('${dstIcons.path}/${_basename(f.path)}')
-              .writeAsBytesSync(f.readAsBytesSync());
+      // Skip the original manifest templates — the matching one for this
+      // target is renamed to manifest.json below; the other two are
+      // discarded.
+      final rel = _relative(entity.path, src.path);
+      if (rel.startsWith('manifest.') && rel.endsWith('.json') &&
+          !rel.contains('/') /* only top-level manifests */) {
+        if (rel == target.manifestName) {
+          File('${dst.path}/manifest.json')
+              .writeAsStringSync(entity.readAsStringSync());
         }
+        continue;
       }
+      // Files inside `content/` or any future subdirectory land at
+      // their original relative path inside dst.
+      final dstPath = '${dst.path}/$rel';
+      File(dstPath).parent.createSync(recursive: true);
+      File(dstPath).writeAsBytesSync(entity.readAsBytesSync());
     }
     print('wrote ${dst.path}');
   }
@@ -92,4 +84,17 @@ String _repoRoot() {
 String _basename(String path) {
   final i = path.lastIndexOf(RegExp(r'[/\\]'));
   return i < 0 ? path : path.substring(i + 1);
+}
+
+String _relative(String path, String root) {
+  // Make path absolute then strip the root + separator.
+  final abs = File(path).absolute.path;
+  final rootAbs = Directory(root).absolute.path;
+  var prefix = rootAbs;
+  if (!prefix.endsWith(Platform.pathSeparator)) {
+    prefix = '$prefix${Platform.pathSeparator}';
+  }
+  if (abs.startsWith(prefix)) return abs.substring(prefix.length);
+  // Fallback: best-effort basename only.
+  return _basename(path);
 }

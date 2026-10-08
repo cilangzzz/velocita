@@ -56,6 +56,8 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
       // integer values for numeric options (verified 1.37.0).
       'max-concurrent-downloads': '${s.maxConcurrentDownloads}',
       'max-overall-download-limit': '${s.maxOverallDownloadLimitBytesPerSec}',
+      'split': '${s.split}',
+      'max-connection-per-server': '${s.maxConnectionPerServer}',
       'no-proxy': s.proxyBypass,
     };
     if (s.proxyKind == ProxyKind.http) {
@@ -93,6 +95,8 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
       saveDir: downloads.path,
       maxConcurrentDownloads: DownloadSettings.defaultMaxConcurrent,
       maxOverallDownloadLimitBytesPerSec: 0,
+      split: DownloadSettings.defaultSplit,
+      maxConnectionPerServer: DownloadSettings.defaultMaxConnPerServer,
     );
   }
 
@@ -122,6 +126,8 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
     String? proxyUsername,
     String? proxyPassword,
     String? proxyBypass,
+    int? split,
+    int? maxConnectionPerServer,
   }) async {
     final current = state.value;
     if (current == null) return; // not loaded yet
@@ -136,6 +142,8 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
       proxyUsername: proxyUsername,
       proxyPassword: proxyPassword,
       proxyBypass: proxyBypass,
+      split: split,
+      maxConnectionPerServer: maxConnectionPerServer,
     );
     final options = buildGlobalOptionPatches(current, next);
     if (options.isNotEmpty) {
@@ -166,6 +174,12 @@ Map<String, Object?> buildGlobalOptionPatches(
       from.maxOverallDownloadLimitBytesPerSec) {
     options['max-overall-download-limit'] =
         '${to.maxOverallDownloadLimitBytesPerSec}';
+  }
+  if (to.split != from.split) {
+    options['split'] = '${to.split}';
+  }
+  if (to.maxConnectionPerServer != from.maxConnectionPerServer) {
+    options['max-connection-per-server'] = '${to.maxConnectionPerServer}';
   }
   // `buildAllProxy` returns '' for off / socks5 / incomplete, which
   // doubles as "clear the proxy".

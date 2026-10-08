@@ -43,6 +43,43 @@ class _HostTimeout extends _HostProbe {
   const _HostTimeout();
 }
 
+/// Read the initial `velocita://add?url=…` deep link the OS handed
+/// us in argv. Returns `null` when there is no such link, when
+/// `app_links` fails, or when the URL is malformed.
+///
+/// Two independent paths are tried:
+///   1. `app_links.getInitialLink()` — works for production builds
+///      launched directly via the OS protocol handler (one argv
+///      entry: the URL).
+///   2. `Platform.executableArguments` scan — works for `flutter run`
+///      dev mode where extra debug args push `argc` past 2 (the
+///      Windows `app_links` plugin hard-rejects any `argc != 2`),
+///      and as a defense in depth against the same plugin failing
+///      silently in other edge cases.
+Future<({String url, String? referer, String? tabTitle, String source})?>
+    readInitialDeepLink() async {
+  // Try `app_links` first; fall back to a direct argv scan on
+  // failure (which includes the `flutter run` argc-mismatch case).
+  Uri? initial;
+  try {
+    final appLinks = AppLinks();
+    initial = await appLinks.getInitialLink();
+  } catch (e) {
+    _log.warning('app_links.getInitialLink failed: $e');
+  }
+  initial ??= _scanArgvForVelocitaLink();
+  if (initial == null) return null;
+  if (initial.scheme != 'velocita') return null;
+  final url = initial.queryParameters['url'];
+  if (url == null || url.isEmpty) return null;
+  return (
+    url: url,
+    referer: initial.queryParameters['referer'],
+    tabTitle: initial.queryParameters['tabTitle'],
+    source: 'deepLink',
+  );
+}
+
 /// Entry point for the "I am a second instance" branch.
 ///
 /// Returns the URL we should forward to the primary, or `null` when
@@ -140,17 +177,42 @@ Future<_HostProbe> _tryReadNativeMessagingFrame() async {
 /// Reads the `app_links` initial URI (the URL the OS handed us as
 /// `argv[0]` when launching for a `velocita://…` click). Returns
 /// [_HostTimeout] if no such URI exists.
+///
+/// Falls back to a direct `Platform.executableArguments` scan when
+/// `app_links` is unavailable or rejects the current argv (the
+/// Windows plugin's hard-coded `argc != 2` check is the typical
+/// culprit when launching under `flutter run`).
 Future<_HostProbe> _tryReadInitialDeepLink() async {
+  Uri? initial;
   try {
     final appLinks = AppLinks();
-    final initial = await appLinks.getInitialLink();
-    if (initial == null) return const _HostTimeout();
-    if (initial.scheme != 'velocita') return const _HostTimeout();
-    return _HostDeepLink(initial);
+    initial = await appLinks.getInitialLink();
   } catch (e) {
     _log.warning('app_links probe: $e');
-    return const _HostTimeout();
   }
+  initial ??= _scanArgvForVelocitaLink();
+  if (initial == null) return const _HostTimeout();
+  if (initial.scheme != 'velocita') return const _HostTimeout();
+  return _HostDeepLink(initial);
+}
+
+/// Scan `Platform.executableArguments` for the first entry that
+/// looks like a `velocita://…` URI and return it parsed. Returns
+/// `null` when no such entry is present.
+///
+/// Used as a fallback for the `app_links` Windows plugin, which
+/// hard-rejects any command line whose argc is not exactly 2
+/// (`app_links_plugin.cpp` `if (argv == nullptr || argc != 2)`).
+/// Under `flutter run` the exe is launched with the dev tooling's
+/// own args in argv, so argc is almost always ≥3 and `app_links`
+/// returns null silently.
+Uri? _scanArgvForVelocitaLink() {
+  for (final arg in Platform.executableArguments) {
+    if (arg.startsWith('velocita://')) {
+      return Uri.tryParse(arg);
+    }
+  }
+  return null;
 }
 
 // ── forwarders ───────────────────────────────────────────────

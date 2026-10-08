@@ -29,23 +29,57 @@ class DownloadsRepository {
   ///
   /// [saveDir] defaults to the category-resolved directory if `null`
   /// (the caller is expected to have classified already).
-  Future<String> addUri(String url, {String? saveDir}) async {
+  /// [aria2Options] is merged with `{dir: saveDir}` and forwarded to the
+  /// aria2 RPC client. Use this to pass cookie/referer/header overrides
+  /// when a download needs authenticated headers (e.g. browser-extension
+  /// intercepts of restricted downloads).
+  Future<String> addUri(
+    String url, {
+    String? saveDir,
+    Map<String, Object?>? aria2Options,
+  }) async {
     final dir = saveDir ?? defaultSaveDir;
-    final gid = await _rpc.addUri([url], options: dir == null ? null : {'dir': dir});
+    final base = <String, Object?>{};
+    if (dir != null) base['dir'] = dir;
+    if (aria2Options != null) base.addAll(aria2Options);
+    final gid = await _rpc.addUri(
+      [url],
+      options: base.isEmpty ? null : base,
+    );
     return gid;
   }
 
   /// Add a magnet URI — aria2 fetches metadata and starts the download.
-  Future<String> addMagnet(String magnet, {String? saveDir}) async {
+  Future<String> addMagnet(
+    String magnet, {
+    String? saveDir,
+    Map<String, Object?>? aria2Options,
+  }) async {
     final dir = saveDir ?? defaultSaveDir;
-    final gid = await _rpc.addMagnet(magnet, options: dir == null ? null : {'dir': dir});
+    final base = <String, Object?>{};
+    if (dir != null) base['dir'] = dir;
+    if (aria2Options != null) base.addAll(aria2Options);
+    final gid = await _rpc.addMagnet(
+      magnet,
+      options: base.isEmpty ? null : base,
+    );
     return gid;
   }
 
   /// Add a torrent file (already read into bytes).
-  Future<String> addTorrent(List<int> bytes, {String? saveDir}) async {
+  Future<String> addTorrent(
+    List<int> bytes, {
+    String? saveDir,
+    Map<String, Object?>? aria2Options,
+  }) async {
     final dir = saveDir ?? defaultSaveDir;
-    final gid = await _rpc.addTorrent(bytes, options: dir == null ? null : {'dir': dir});
+    final base = <String, Object?>{};
+    if (dir != null) base['dir'] = dir;
+    if (aria2Options != null) base.addAll(aria2Options);
+    final gid = await _rpc.addTorrent(
+      bytes,
+      options: base.isEmpty ? null : base,
+    );
     return gid;
   }
 

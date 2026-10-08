@@ -51,8 +51,11 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/tray_icon.png
     - assets/extensions/chrome/manifest.json
     - assets/extensions/chrome/background.js
+    - assets/extensions/chrome/content/main.js
+    - assets/extensions/chrome/content/sniffer.js
     - assets/extensions/chrome/popup.html
     - assets/extensions/chrome/popup.js
     - assets/extensions/chrome/options.html
@@ -60,6 +63,8 @@ flutter:
     - assets/extensions/chrome/icons/
     - assets/extensions/edge/manifest.json
     - assets/extensions/edge/background.js
+    - assets/extensions/edge/content/main.js
+    - assets/extensions/edge/content/sniffer.js
     - assets/extensions/edge/popup.html
     - assets/extensions/edge/popup.js
     - assets/extensions/edge/options.html
@@ -67,6 +72,8 @@ flutter:
     - assets/extensions/edge/icons/
     - assets/extensions/firefox/manifest.json
     - assets/extensions/firefox/background.js
+    - assets/extensions/firefox/content/main.js
+    - assets/extensions/firefox/content/sniffer.js
     - assets/extensions/firefox/popup.html
     - assets/extensions/firefox/popup.js
     - assets/extensions/firefox/options.html

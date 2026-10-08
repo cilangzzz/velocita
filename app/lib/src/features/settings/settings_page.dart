@@ -84,6 +84,8 @@ class SettingsPage extends ConsumerWidget {
         const _SaveDirTile(),
         const _MaxConcurrentTile(),
         const _SpeedLimitTile(),
+        const _SplitTile(),
+        const _MaxConnPerServerTile(),
         const Divider(),
         _Section(title: l.connection),
         const _ProxyTile(),
@@ -531,6 +533,219 @@ class _SpeedLimitControlState extends ConsumerState<_SpeedLimitControl> {
 }
 
 // ── Connection tiles ───────────────────────────────────────
+
+/// `split` — how many ranges aria2 cuts each file into.
+///
+/// Note: `changeGlobalOption` only applies to NEW downloads; already-
+/// running tasks keep their original piece layout.
+class _SplitTile extends ConsumerWidget {
+  const _SplitTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final settings = ref.watch(downloadSettingsProvider);
+    return settings.when(
+      data: (s) => _SplitForm(initial: s.split),
+      loading: () => const _SkeletonRow(),
+      error: (e, _) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(l.settingSplit),
+        subtitle: Text(e.toString()),
+      ),
+    );
+  }
+}
+
+class _SplitForm extends ConsumerStatefulWidget {
+  const _SplitForm({required this.initial});
+  final int initial;
+
+  @override
+  ConsumerState<_SplitForm> createState() => _SplitFormState();
+}
+
+class _SplitFormState extends ConsumerState<_SplitForm> {
+  late int _pending;
+
+  @override
+  void initState() {
+    super.initState();
+    _pending = widget.initial;
+  }
+
+  @override
+  void didUpdateWidget(covariant _SplitForm old) {
+    super.didUpdateWidget(old);
+    if (widget.initial != old.initial) _pending = widget.initial;
+  }
+
+  Future<void> _commit(int v) async {
+    setState(() => _pending = v);
+    try {
+      await ref.read(downloadSettingsProvider.notifier).apply(split: v);
+    } catch (_) {/* keep _pending; user can retry */}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(l.settingSplit),
+            subtitle: Text(
+              l.settingSplitHint,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          Row(
+            children: [
+              IconButton(
+                tooltip: '-',
+                icon: const Icon(Icons.remove),
+                onPressed: _pending > 1 ? () => _commit(_pending - 1) : null,
+              ),
+              SizedBox(
+                width: 36,
+                child: Text(
+                  '$_pending',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: '+',
+                icon: const Icon(Icons.add),
+                onPressed: _pending < 16 ? () => _commit(_pending + 1) : null,
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 4, bottom: 8),
+            child: Text(
+              l.settingSplitAppliesToNew,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// `max-connection-per-server` — cap on concurrent connections to the
+/// same server. Effective per-task connection count =
+/// `min(split, maxConnectionPerServer)`, so this must be ≥ `split` for
+/// the user to get the full split count.
+class _MaxConnPerServerTile extends ConsumerWidget {
+  const _MaxConnPerServerTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final settings = ref.watch(downloadSettingsProvider);
+    return settings.when(
+      data: (s) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(l.settingMaxConnPerServer),
+        subtitle: Text(
+          l.settingMaxConnPerServerHint,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        trailing: _ConcurrentStepper(
+          value: s.maxConnectionPerServer,
+          min: 1,
+          max: 16,
+          onCommit: (v) => ref
+              .read(downloadSettingsProvider.notifier)
+              .apply(maxConnectionPerServer: v),
+        ),
+      ),
+      loading: () => const _SkeletonRow(),
+      error: (e, _) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(l.settingMaxConnPerServer),
+        subtitle: Text(e.toString()),
+      ),
+    );
+  }
+}
+
+/// Generic `− N +` stepper extracted from `_MaxConcurrentTile` /
+/// `_SplitForm` so the three download-number tiles share one widget.
+class _ConcurrentStepper extends StatefulWidget {
+  const _ConcurrentStepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onCommit,
+  });
+  final int value;
+  final int min;
+  final int max;
+  final Future<void> Function(int) onCommit;
+
+  @override
+  State<_ConcurrentStepper> createState() => _ConcurrentStepperState();
+}
+
+class _ConcurrentStepperState extends State<_ConcurrentStepper> {
+  late int _pending;
+
+  @override
+  void initState() {
+    super.initState();
+    _pending = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConcurrentStepper old) {
+    super.didUpdateWidget(old);
+    if (widget.value != old.value) _pending = widget.value;
+  }
+
+  Future<void> _commit(int v) async {
+    setState(() => _pending = v);
+    await widget.onCommit(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: '-',
+          icon: const Icon(Icons.remove),
+          onPressed: _pending > widget.min ? () => _commit(_pending - 1) : null,
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(
+            '$_pending',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium,
+          ),
+        ),
+        IconButton(
+          tooltip: '+',
+          icon: const Icon(Icons.add),
+          onPressed: _pending < widget.max ? () => _commit(_pending + 1) : null,
+        ),
+      ],
+    );
+  }
+}
 
 class _ProxyTile extends ConsumerWidget {
   const _ProxyTile();

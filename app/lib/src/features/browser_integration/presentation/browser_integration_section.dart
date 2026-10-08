@@ -11,6 +11,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../localization/app_localizations.dart';
@@ -270,20 +271,54 @@ Future<void> _generateRegFile(BuildContext context) async {
   try {
     final f = await writeRegFile();
     if (!context.mounted) return;
-    // Reveal in Explorer. `explorer.exe /select,<path>` opens the
-    // containing folder with the file highlighted.
+    final path = f.path;
+    final folder = f.parent.path;
+
     if (Platform.isWindows) {
-      await Process.start(
-        'explorer.exe',
-        ['/select,${f.path}'],
-      );
+      // The most reliable way to "reveal in Explorer" on Windows is
+      // `cmd /c start "" "<path>"`. The empty `""` is the title
+      // `start` requires; the second quoted arg is the path. The
+      // shell handles the quoting for us, so paths with spaces
+      // (e.g. `C:\Users\John Smith\…`) work without any extra work
+      // on our side.
+      //
+      // NOTE: do NOT try `explorer.exe /select,<path>` — the
+      // `/select,` flag must be glued to the path as a single argv
+      // entry, and Dart's Windows quoting escapes the inner quotes
+      // in a way that makes Explorer fall through to a default
+      // location. Tested and confirmed.
+      var opened = false;
+      try {
+        await Process.start(
+          'cmd',
+          ['/c', 'start', '""', folder],
+          runInShell: true,
+        );
+        opened = true;
+      } catch (e) {
+        // fall through to the direct-explorer fallback
+      }
+      if (!opened) {
+        try {
+          await Process.start('explorer.exe', [folder]);
+        } catch (e) {
+          // ignore — SnackBar below shows the path so the user can
+          // navigate manually.
+        }
+      }
     }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-        '${l.browserIntegrationRegFileWritten}\n${f.path}',
+      content: Text('${l.browserIntegrationRegFileWritten}\n$path'),
+      duration: const Duration(seconds: 8),
+      action: SnackBarAction(
+        label: l.copy,
+        onPressed: () {
+          // Hand the path to the user's clipboard so they can paste
+          // it into Run / Explorer / etc.
+          Clipboard.setData(ClipboardData(text: path));
+        },
       ),
-      duration: const Duration(seconds: 6),
     ));
   } catch (e) {
     if (!context.mounted) return;

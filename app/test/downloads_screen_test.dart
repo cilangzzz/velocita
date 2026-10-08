@@ -14,15 +14,19 @@ class _FakeRepo implements DownloadsRepository {
   @override
   String? get defaultSaveDir => null;
   @override
-  Future<String> addUri(String url, {String? saveDir}) async {
+  Future<String> addUri(String url,
+          {String? saveDir, Map<String, Object?>? aria2Options}) async {
     addedUris.add(url);
     return 'gid-${addedUris.length}';
   }
 
   @override
-  Future<String> addMagnet(String magnet, {String? saveDir}) async => 'gid-m';
+  Future<String> addMagnet(String magnet,
+          {String? saveDir, Map<String, Object?>? aria2Options}) async =>
+      'gid-m';
   @override
-  Future<String> addTorrent(List<int> bytes, {String? saveDir}) async =>
+  Future<String> addTorrent(List<int> bytes,
+          {String? saveDir, Map<String, Object?>? aria2Options}) async =>
       'gid-t';
   @override
   Future<void> pause(String gid) async {}

@@ -186,9 +186,17 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
     }
   }
 
-  Future<void> addUri(String url, {String? saveDir}) async {
+  Future<void> addUri(
+    String url, {
+    String? saveDir,
+    Map<String, Object?>? aria2Options,
+  }) async {
     final repo = ref.read(downloadsRepositoryProvider);
-    final gid = await repo.addUri(url, saveDir: saveDir);
+    final gid = await repo.addUri(
+      url,
+      saveDir: saveDir,
+      aria2Options: aria2Options,
+    );
     // Stamp local "added" time immediately.
     _addedAt[gid] = DateTime.now();
     // Probe the new task directly so the row appears in the table
@@ -198,17 +206,33 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
     await refresh();
   }
 
-  Future<void> addMagnet(String magnet, {String? saveDir}) async {
+  Future<void> addMagnet(
+    String magnet, {
+    String? saveDir,
+    Map<String, Object?>? aria2Options,
+  }) async {
     final repo = ref.read(downloadsRepositoryProvider);
-    final gid = await repo.addMagnet(magnet, saveDir: saveDir);
+    final gid = await repo.addMagnet(
+      magnet,
+      saveDir: saveDir,
+      aria2Options: aria2Options,
+    );
     _addedAt[gid] = DateTime.now();
     await _refreshOne(gid);
     await refresh();
   }
 
-  Future<void> addTorrent(List<int> bytes, {String? saveDir}) async {
+  Future<void> addTorrent(
+    List<int> bytes, {
+    String? saveDir,
+    Map<String, Object?>? aria2Options,
+  }) async {
     final repo = ref.read(downloadsRepositoryProvider);
-    final gid = await repo.addTorrent(bytes, saveDir: saveDir);
+    final gid = await repo.addTorrent(
+      bytes,
+      saveDir: saveDir,
+      aria2Options: aria2Options,
+    );
     _addedAt[gid] = DateTime.now();
     await _refreshOne(gid);
     await refresh();

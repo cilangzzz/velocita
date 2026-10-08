@@ -167,12 +167,46 @@ void main() {
       final to = base.copyWith(
         maxConcurrentDownloads: 9,
         maxOverallDownloadLimitBytesPerSec: 1024,
+        split: 8,
+        maxConnectionPerServer: 8,
       );
       final patch = buildGlobalOptionPatches(base, to);
       expect(patch['max-concurrent-downloads'], '9',
           reason: 'int would be silently ignored by aria2');
       expect(patch['max-overall-download-limit'], '1024',
           reason: 'int would be silently ignored by aria2');
+      expect(patch['split'], '8',
+          reason: 'int would be silently ignored by aria2');
+      expect(patch['max-connection-per-server'], '8',
+          reason: 'int would be silently ignored by aria2');
+    });
+
+    test('split change is patched', () {
+      final to = base.copyWith(split: 8);
+      final patch = buildGlobalOptionPatches(base, to);
+      expect(patch['split'], '8');
+      expect(patch.containsKey('max-connection-per-server'), isFalse,
+          reason: 'unchanged fields must not be in the patch');
+    });
+
+    test('max-connection-per-server change is patched', () {
+      final to = base.copyWith(maxConnectionPerServer: 4);
+      final patch = buildGlobalOptionPatches(base, to);
+      expect(patch['max-connection-per-server'], '4');
+      expect(patch.containsKey('split'), isFalse);
+    });
+
+    test('default split / max-conn values round-trip through JSON', () {
+      // Verify a settings.json without the new fields still loads with
+      // sensible defaults (5 / 5) — backward compatibility.
+      final legacy = <String, Object?>{
+        'saveDir': '/tmp',
+        'maxConcurrentDownloads': 5,
+        'maxOverallDownloadLimitBytesPerSec': 0,
+      };
+      final s = DownloadSettings.fromJson(legacy);
+      expect(s.split, 5);
+      expect(s.maxConnectionPerServer, 5);
     });
 
     test('no patch when nothing changed', () {

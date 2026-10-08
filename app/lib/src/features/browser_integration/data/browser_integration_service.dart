@@ -190,13 +190,26 @@ class BrowserIntegrationService {
             (s) => s.name == sourceName,
             orElse: () => defaultSource,
           );
+    final cookieHeader = (parsed['cookieHeader'] as String?)?.trim();
+    final rawHeaders = parsed['headers'];
+    final requestHeaders = rawHeaders is List
+        ? rawHeaders.whereType<String>().toList(growable: false)
+        : null;
     final request = AddRequest(
       url: url,
       source: source,
       receivedAt: DateTime.now(),
       referer: parsed['referer'] as String?,
       tabTitle: parsed['tabTitle'] as String?,
+      cookieHeader:
+          cookieHeader == null || cookieHeader.isEmpty ? null : cookieHeader,
+      requestHeaders:
+          requestHeaders == null || requestHeaders.isEmpty ? null : requestHeaders,
     );
+    final dedupKey = (parsed['dedupKey'] as String?)?.trim();
+    if (dedupKey != null && dedupKey.isNotEmpty) {
+      request.dedupKey = dedupKey;
+    }
     enqueue(request);
     _log.info('queued add from $source url-hash=${url.hashCode}');
     _writeJson(

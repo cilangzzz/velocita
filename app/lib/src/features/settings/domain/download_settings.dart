@@ -15,6 +15,8 @@ class DownloadSettings {
     this.proxyUsername = '',
     this.proxyPassword = '',
     this.proxyBypass = '',
+    this.split = defaultSplit,
+    this.maxConnectionPerServer = defaultMaxConnPerServer,
   });
 
   /// Default save directory. Maps to aria2's `dir` global option.
@@ -51,6 +53,22 @@ class DownloadSettings {
   /// Example: `localhost,127.0.0.1,*.internal`.
   final String proxyBypass;
 
+  /// How many parallel ranges aria2 splits each file into for HTTP
+  /// downloads. Maps to `split`. The cap is also gated by
+  /// [maxConnectionPerServer] and `min-split-size` (see
+  /// [[aria2-split-vs-min-split-size]]).
+  ///
+  /// Runtime changes via `changeGlobalOption` only apply to **new**
+  /// downloads — already-running tasks keep their original piece
+  /// layout (aria2 behaviour, not a bug).
+  final int split;
+
+  /// Cap on concurrent connections to the same server. Maps to
+  /// `max-connection-per-server`. The effective per-task connection
+  /// count is `min(split, maxConnectionPerServer)`, so this value must
+  /// be at least as large as [split] to get the full split count.
+  final int maxConnectionPerServer;
+
   /// Speed limit in KiB/s (UI-friendly unit). `null` means unlimited.
   int? get maxOverallDownloadLimitKBps =>
       maxOverallDownloadLimitBytesPerSec <= 0
@@ -59,6 +77,8 @@ class DownloadSettings {
 
   static const int minConcurrent = 1;
   static const int maxConcurrent = 16;
+  static const int defaultSplit = 5;
+  static const int defaultMaxConnPerServer = 5;
 
   DownloadSettings copyWith({
     String? saveDir,
@@ -70,6 +90,8 @@ class DownloadSettings {
     String? proxyUsername,
     String? proxyPassword,
     String? proxyBypass,
+    int? split,
+    int? maxConnectionPerServer,
   }) {
     return DownloadSettings(
       saveDir: saveDir ?? this.saveDir,
@@ -84,6 +106,9 @@ class DownloadSettings {
       proxyUsername: proxyUsername ?? this.proxyUsername,
       proxyPassword: proxyPassword ?? this.proxyPassword,
       proxyBypass: proxyBypass ?? this.proxyBypass,
+      split: split ?? this.split,
+      maxConnectionPerServer:
+          maxConnectionPerServer ?? this.maxConnectionPerServer,
     );
   }
 
@@ -99,6 +124,8 @@ class DownloadSettings {
         'proxyUsername': proxyUsername,
         'proxyPassword': proxyPassword,
         'proxyBypass': proxyBypass,
+        'split': split,
+        'maxConnectionPerServer': maxConnectionPerServer,
       };
 
   static DownloadSettings fromJson(Map<String, Object?> raw) {
@@ -114,6 +141,9 @@ class DownloadSettings {
       proxyUsername: (raw['proxyUsername'] as String?) ?? '',
       proxyPassword: (raw['proxyPassword'] as String?) ?? '',
       proxyBypass: (raw['proxyBypass'] as String?) ?? '',
+      split: (raw['split'] as int?) ?? defaultSplit,
+      maxConnectionPerServer:
+          (raw['maxConnectionPerServer'] as int?) ?? defaultMaxConnPerServer,
     );
   }
 

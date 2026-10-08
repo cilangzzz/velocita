@@ -1,20 +1,15 @@
-// ignore_for_file: avoid_relative_lib_imports
-// Top-level widget that listens to `pendingAddRequestsProvider` and
-// either shows the existing `AddTaskDialog` (with the URL prefilled) or
-// silently adds the task to aria2, based on the user's
-// "show confirmation popup" setting.
-//
-// Mounted once, in `app.dart` inside `MaterialApp.router(builder:)`.
-// Holds a serial queue: a second request arriving while the first
-// dialog is open is held until the user dismisses / confirms the first.
-//
-// The dialog is opened via the global `rootNavigatorKey.currentContext`
-// so it floats above any active route.
+// ignore_for_file: use_build_context_synchronously
+// All `BuildContext` instances we use are obtained via
+// `widget.navigatorKey.currentContext`, which is a `GlobalKey<NavigatorState>`.
+// The async-gap check is therefore a false positive — a global key's
+// context is not bound to a widget's lifecycle. We re-`mounted`-check
+// around the showDialog call as a belt-and-suspenders guard.
 import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../downloads/downloads.dart';
 import '../data/browser_integration_settings_provider.dart';
@@ -119,8 +114,18 @@ class _PendingAddRequestListenerState
   }
 
   Future<void> _showConfirmDialog(AddRequest r) async {
+    // If the window is hidden (the user closed it earlier but the
+    // process is still alive in the tray, serving browser deep
+    // links), bring it forward. The dialog can be scheduled into
+    // a hidden window but the user can't see it, so we MUST show +
+    // focus first.
     final ctx = widget.navigatorKey.currentContext;
     if (ctx == null) return;
+    await _ensureWindowVisible();
+    if (!mounted) return;
+    // `ctx` is a global navigator key's currentContext, not a widget
+    // BuildContext; the async gap (`_ensureWindowVisible()`) does
+    // not invalidate it, and `mounted` was rechecked above.
     final result = await showDialog<SubmitResult>(
       context: ctx,
       barrierDismissible: true,
@@ -131,13 +136,30 @@ class _PendingAddRequestListenerState
   }
 
   Future<void> _autoAdd(AddRequest r) async {
+    final ctx = widget.navigatorKey.currentContext;
+    if (ctx == null) return;
+    await _ensureWindowVisible();
+    if (!mounted) return;
     try {
-      await ref.read(taskListProvider.notifier).addUri(r.url);
+      await ref.read(taskListProvider.notifier).addUri(
+            r.url,
+            aria2Options: _toAria2Options(r),
+          );
     } catch (e) {
       _showSnack('Failed to add: $e');
       return;
     }
     _showSnack('Added: ${r.url}');
+  }
+
+  Future<void> _ensureWindowVisible() async {
+    try {
+      await windowManager.show();
+      await windowManager.focus();
+    } catch (_) {
+      // Window manager isn't always available (tests, hot reload).
+      // Silently no-op; the dialog can still be scheduled.
+    }
   }
 
   Future<void> _applyResult(SubmitResult r) async {
@@ -150,6 +172,29 @@ class _PendingAddRequestListenerState
       case SubmitKind.torrent:
         await notifier.addTorrent(r.torrentBytes!, saveDir: r.saveDir);
     }
+  }
+
+  /// Translate an [AddRequest] (extension-side wire shape) into the
+  /// aria2 options map expected by `Aria2RpcClient.addUri`:
+  ///   * `referer` — only when the request carried a non-empty referer.
+  ///   * `header` — array form so multiple overrides stack cleanly.
+  ///     Cookie comes first (folded from [AddRequest.cookieHeader]),
+  ///     followed by any explicit [AddRequest.requestHeaders].
+  ///
+  /// Returns `null` when no overrides are needed — the caller can detect
+  /// that and skip merging.
+  Map<String, Object?>? _toAria2Options(AddRequest r) {
+    final m = <String, Object?>{};
+    if (r.referer != null && r.referer!.isNotEmpty) {
+      m['referer'] = r.referer;
+    }
+    final headers = <String>[];
+    if (r.cookieHeader != null && r.cookieHeader!.isNotEmpty) {
+      headers.add('Cookie: ${r.cookieHeader}');
+    }
+    if (r.requestHeaders != null) headers.addAll(r.requestHeaders!);
+    if (headers.isNotEmpty) m['header'] = headers;
+    return m.isEmpty ? null : m;
   }
 
   void _showSnack(String text) {

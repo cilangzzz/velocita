@@ -253,42 +253,64 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
     _recomputePreview();
     final l = AppLocalizations.of(context);
     return AlertDialog(
-      title: Text(l.addDownloadTask),
-      content: SizedBox(
-        width: 480,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TabBar(
-              controller: _tabController,
-              tabs: [
-                Tab(text: l.tabUrl),
-                Tab(text: l.tabMagnet),
-                Tab(text: l.tabTorrent),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 96,
-              child: TabBarView(
+      // Dialog-level margin: gives the content breathing room from the
+      // dialog's own padding.
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 24,
+        vertical: 24,
+      ),
+      title: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(l.addDownloadTask),
+      ),
+      content: Container(
+        // Outer margin around the dialog body so the title, tabs,
+        // and bottom action buttons don't feel cramped against the
+        // dialog frame.
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TabBar(
                 controller: _tabController,
-                children: [
-                  _buildUrlTab(),
-                  _buildMagnetTab(),
-                  _buildTorrentTab(),
+                tabs: [
+                  Tab(text: l.tabUrl),
+                  Tab(text: l.tabMagnet),
+                  Tab(text: l.tabTorrent),
                 ],
               ),
-            ),
-            const SizedBox(height: 8),
-            _SaveToField(
-              controller: _saveDirController,
-              preview: _saveDirPreview,
-              isCustom: _customSaveDir != null,
-              onBrowse: _browseSaveDir,
-              saveToLabel: l.saveTo,
-              customLabel: l.customDirectory,
-            ),
-          ],
+              const SizedBox(height: 12),
+              // Middle container: the per-tab input area. Wrap in a
+              // Container with vertical margin so the input fields
+              // don't sit right against the tab strip above and the
+              // "save to" row below.
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                child: SizedBox(
+                  height: 96,
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildUrlTab(),
+                      _buildMagnetTab(),
+                      _buildTorrentTab(),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SaveToField(
+                controller: _saveDirController,
+                preview: _saveDirPreview,
+                isCustom: _customSaveDir != null,
+                onBrowse: _browseSaveDir,
+                saveToLabel: l.saveTo,
+                customLabel: l.customDirectory,
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -308,26 +330,34 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
     final l = AppLocalizations.of(context);
     return Form(
       key: _urlFormKey,
-      child: TextFormField(
-        controller: _urlController,
-        autofocus: true,
-        decoration: InputDecoration(
-          labelText: l.tabUrl,
-          hintText: l.urlHint,
-          border: const OutlineInputBorder(),
+      child: Container(
+        // URL field gets its own margin so the input sits with a bit
+        // of breathing room from the dialog frame and any neighbours.
+        margin: const EdgeInsets.symmetric(
+          horizontal: 4,
+          vertical: 8,
         ),
-        keyboardType: TextInputType.url,
-        validator: (value) {
-          final s = (value ?? '').trim();
-          if (s.isEmpty) return l.urlRequired;
-          final uri = Uri.tryParse(s);
-          if (uri == null ||
-              !(uri.scheme == 'http' || uri.scheme == 'https')) {
-            return l.urlInvalid;
-          }
-          return null;
-        },
-        onFieldSubmitted: (_) => _submit(),
+        child: TextFormField(
+          controller: _urlController,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: l.tabUrl,
+            hintText: l.urlHint,
+            border: const OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.url,
+          validator: (value) {
+            final s = (value ?? '').trim();
+            if (s.isEmpty) return l.urlRequired;
+            final uri = Uri.tryParse(s);
+            if (uri == null ||
+                !(uri.scheme == 'http' || uri.scheme == 'https')) {
+              return l.urlInvalid;
+            }
+            return null;
+          },
+          onFieldSubmitted: (_) => _submit(),
+        ),
       ),
     );
   }
@@ -336,50 +366,73 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
     final l = AppLocalizations.of(context);
     return Form(
       key: _magnetFormKey,
-      child: TextFormField(
-        controller: _magnetController,
-        autofocus: true,
-        maxLines: 3,
-        decoration: InputDecoration(
-          labelText: l.magnetLabel,
-          hintText: l.magnetHint,
-          border: const OutlineInputBorder(),
+      child: Container(
+        // Magnet field needs the same surrounding margin as the URL
+        // field so the two tab inputs feel symmetrical.
+        margin: const EdgeInsets.symmetric(
+          horizontal: 4,
+          vertical: 8,
         ),
-        validator: (value) {
-          final s = (value ?? '').trim();
-          if (!looksLikeMagnet(s)) return l.magnetInvalid;
-          final parsed = parseMagnet(s);
-          if (!parsed.hasBtih) {
-            return l.magnetMissingBtih;
-          }
-          return null;
-        },
-        onFieldSubmitted: (_) => _submit(),
+        child: TextFormField(
+          controller: _magnetController,
+          autofocus: true,
+          maxLines: 3,
+          decoration: InputDecoration(
+            labelText: l.magnetLabel,
+            hintText: l.magnetHint,
+            border: const OutlineInputBorder(),
+            // Magnet URIs are long; expanding the contentPadding
+            // gives the multi-line text enough room to breathe
+            // vertically and stops the top of the placeholder from
+            // clipping.
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+          ),
+          validator: (value) {
+            final s = (value ?? '').trim();
+            if (!looksLikeMagnet(s)) return l.magnetInvalid;
+            final parsed = parseMagnet(s);
+            if (!parsed.hasBtih) {
+              return l.magnetMissingBtih;
+            }
+            return null;
+          },
+          onFieldSubmitted: (_) => _submit(),
+        ),
       ),
     );
   }
 
   Widget _buildTorrentTab() {
     final l = AppLocalizations.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        OutlinedButton.icon(
-          onPressed: _pickTorrent,
-          icon: const Icon(Icons.folder_open),
-          label: Text(
-            _torrentName == null ? l.chooseTorrent : _torrentName!,
-            overflow: TextOverflow.ellipsis,
+    return Container(
+      // Same surrounding margin as the URL / magnet inputs.
+      margin: const EdgeInsets.symmetric(
+        horizontal: 4,
+        vertical: 8,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _pickTorrent,
+            icon: const Icon(Icons.folder_open),
+            label: Text(
+              _torrentName == null ? l.chooseTorrent : _torrentName!,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-        if (_torrentBytes != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            '${(_torrentBytes!.length / 1024).toStringAsFixed(1)} KiB',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          if (_torrentBytes != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${(_torrentBytes!.length / 1024).toStringAsFixed(1)} KiB',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 

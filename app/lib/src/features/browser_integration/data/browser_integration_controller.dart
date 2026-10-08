@@ -20,6 +20,10 @@
 //     If the user's [enabled] setting is true, the service keeps
 //     running. If false, the controller stops it immediately.
 //   * Subsequent toggles in Settings start / stop the service live.
+//   * On startup, the controller also checks for an `velocita://`
+//     deep link in argv (the OS-launched wake-up case when Velocita
+//     was not already running). If one is found it is enqueued once
+//     both the service is up and the listener is subscribed.
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +32,7 @@ import '../domain/add_request.dart';
 import '../domain/browser_integration_settings.dart';
 import 'browser_integration_service.dart';
 import 'browser_integration_settings_provider.dart';
+import 'host_bridge.dart';
 
 /// Optional initial service provided by `main.dart` after its
 /// second-instance probe. The default is `null`; the controller
@@ -52,6 +57,18 @@ class BrowserIntegrationController extends Notifier<bool> {
   StreamController<AddRequest>? _passthrough;
   Future<void>? _pendingStart;
 
+  /// Resolves when the HTTP service is up and ready to accept
+  /// enqueues. Used by the initial-deep-link watcher to wait until
+  /// enqueuing is safe (i.e. an active listener is subscribed).
+  /// Replaced on every stop so the next `_start()` resolves a fresh
+  /// future for the next-generation service.
+  Completer<BrowserIntegrationService> _ready =
+      Completer<BrowserIntegrationService>();
+
+  /// Set to true after we've already kicked off the initial-deep-link
+  /// check, so we don't re-check on every `build()`.
+  bool _initialChecked = false;
+
   @override
   bool build() {
     // If main.dart successfully bound the port, take ownership of
@@ -64,6 +81,14 @@ class BrowserIntegrationController extends Notifier<bool> {
       _passthrough = StreamController<AddRequest>.broadcast();
       final sub = _service!.addRequestStream.listen(_passthrough!.add);
       ref.onDispose(sub.cancel);
+      if (!_ready.isCompleted) _ready.complete(initial);
+    }
+
+    // Kick off the initial-deep-link check exactly once. The actual
+    // check is async; the result is held until the service is up.
+    if (!_initialChecked) {
+      _initialChecked = true;
+      _consumeInitialDeepLink();
     }
 
     // React to changes in the enabled toggle.
@@ -111,6 +136,7 @@ class BrowserIntegrationController extends Notifier<bool> {
     _service = svc;
     final sub = svc.addRequestStream.listen(_passthrough!.add);
     ref.onDispose(sub.cancel);
+    if (!_ready.isCompleted) _ready.complete(svc);
     state = true;
   }
 
@@ -123,6 +149,9 @@ class BrowserIntegrationController extends Notifier<bool> {
       await svc.stop();
     }
     state = false;
+    // The service is gone; swap in a fresh completer so the next
+    // `_start()` can re-resolve any future `await _ready.future`.
+    if (_ready.isCompleted) _ready = Completer<BrowserIntegrationService>();
   }
 
   void _stop() {
@@ -130,6 +159,32 @@ class BrowserIntegrationController extends Notifier<bool> {
     _service = null;
     _passthrough?.close();
     _passthrough = null;
+  }
+
+  /// Check the OS-spawned argv for a `velocita://add?url=…` link and
+  /// enqueue it once the service is up. The controller is the right
+  /// place for this: it owns the service, and the enqueue is what
+  /// shows the dialog in the listener.
+  Future<void> _consumeInitialDeepLink() async {
+    final link = await readInitialDeepLink();
+    if (link == null) return;
+    // Wait until the service is up before enqueueing. If the
+    // listener hasn't subscribed yet (it's set up in
+    // `initState`), the broadcast stream would drop the event.
+    await _ready.future;
+    // One microtask tick so the widget tree has a chance to mount
+    // and the listener to subscribe.
+    await Future<void>.delayed(Duration.zero);
+    // Re-check: the user could have toggled the service off
+    // between our read and this enqueue.
+    if (_service == null) return;
+    _service!.enqueue(AddRequest(
+      url: link.url,
+      source: AddSource.deepLink,
+      receivedAt: DateTime.now(),
+      referer: link.referer,
+      tabTitle: link.tabTitle,
+    ));
   }
 
   /// Broadcast stream that the UI's `PendingAddRequestListener`

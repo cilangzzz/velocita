@@ -16,3 +16,9 @@ desktop.ini
 .vscode/
 *.swp
 *.swo
+
+# Third-party reference source kept for local study only (mirrors the
+# _ignore/ pattern at the repo root). Nothing under here is part of
+# Velocita.
+_reference/
+_reference/**
