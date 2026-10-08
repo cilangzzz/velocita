@@ -134,6 +134,14 @@ class _CategorySidebar extends ConsumerWidget {
             onTap: () =>
                 ref.read(selectedCategoryProvider.notifier).state = 'image',
           ),
+          _CategoryRow(
+            icon: Icons.folder_off_outlined,
+            label: l.other,
+            id: 'other',
+            selected: selected == 'other',
+            onTap: () =>
+                ref.read(selectedCategoryProvider.notifier).state = 'other',
+          ),
           const Divider(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -156,24 +164,96 @@ class _CategorySidebar extends ConsumerWidget {
   }
 
   void _showCategoriesInfo(BuildContext context) {
+    final l = AppLocalizations.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Default categories'),
-        content: const Text(
-          'Velocita ships 6 default categories with extension patterns:\n\n'
-          '• Videos  — .mp4 .mkv .avi .mov .webm\n'
-          '• Music   — .mp3 .flac .wav .aac\n'
-          '• Documents — .pdf .doc .docx .txt\n'
-          '• Archives — .zip .rar .7z .tar .gz\n'
-          '• Programs — .exe .msi .dmg .deb\n'
-          '• Images  — .jpg .jpeg .png .gif .webp\n\n'
-          'New downloads are routed into the matching category folder.',
+        title: Text(l.defaultCategoriesTitle),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(l.defaultCategoriesIntro),
+              const SizedBox(height: 12),
+              _CategoryInfoRow(
+                  icon: Icons.movie_outlined,
+                  title: l.movies,
+                  extensions: '.mp4 .mkv .avi .mov .webm'),
+              _CategoryInfoRow(
+                  icon: Icons.music_note_outlined,
+                  title: l.music,
+                  extensions: '.mp3 .flac .wav .aac'),
+              _CategoryInfoRow(
+                  icon: Icons.archive_outlined,
+                  title: l.archives,
+                  extensions: '.zip .rar .7z .tar .gz'),
+              _CategoryInfoRow(
+                  icon: Icons.picture_as_pdf_outlined,
+                  title: l.documents,
+                  extensions: '.pdf .doc .docx .txt'),
+              _CategoryInfoRow(
+                  icon: Icons.adb_outlined,
+                  title: l.programs,
+                  extensions: '.exe .msi .dmg .deb'),
+              _CategoryInfoRow(
+                  icon: Icons.image_outlined,
+                  title: l.images,
+                  extensions: '.jpg .jpeg .png .gif .webp'),
+              const SizedBox(height: 12),
+              Text(
+                l.defaultCategoriesFooter,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
+            child: Text(l.close),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryInfoRow extends StatelessWidget {
+  const _CategoryInfoRow({
+    required this.icon,
+    required this.title,
+    required this.extensions,
+  });
+  final IconData icon;
+  final String title;
+  final String extensions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.bodyMedium),
+                Text(
+                  extensions,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -280,7 +360,7 @@ class _Toolbar extends ConsumerWidget {
           FilledButton.icon(
             onPressed: () => _openAddDialog(context, ref),
             icon: const Icon(Icons.add),
-            label: Text(l.addUrl),
+            label: Text(l.addTask),
           ),
         ],
       ),
@@ -345,11 +425,32 @@ class _Toolbar extends ConsumerWidget {
         case SubmitKind.torrent:
           await notifier.addTorrent(result.torrentBytes!, saveDir: saveDir);
       }
+      // Auto-select the matched category so the next download of the
+      // same kind defaults to it without an extra click. The category is
+      // derived from the saveDir we just resolved (suffix = Videos /
+      // Images / ...).
+      _autoSelectFromSaveDir(ref, saveDir);
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Add failed: $e')),
       );
+    }
+  }
+
+  /// After a successful add, set [selectedCategoryProvider] to the
+  /// category whose directory matches the just-resolved [saveDir]. This
+  /// keeps the sidebar highlight in sync with what the user just used.
+  void _autoSelectFromSaveDir(WidgetRef ref, String? saveDir) {
+    if (saveDir == null) return;
+    for (final c in _categorySpecs) {
+      // Match the trailing segment; the saveDir we produced always ends
+      // with `\${c.dirName}`.
+      final needle = '\\${c.dirName}';
+      if (saveDir.toLowerCase().endsWith(needle.toLowerCase())) {
+        ref.read(selectedCategoryProvider.notifier).state = c.id;
+        return;
+      }
     }
   }
 
@@ -410,76 +511,135 @@ class _DownloadsTable extends ConsumerWidget {
       return _EmptyState(filter: filter);
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          sortColumnIndex: SortColumn.values.indexOf(sort.column),
-          sortAscending: sort.ascending,
-          columnSpacing: 24,
-          headingRowHeight: 36,
-          dataRowMinHeight: 36,
-          dataRowMaxHeight: 44,
-          columns: [
-            _col(ref, SortColumn.filename, 'Filename', Icons.text_fields),
-            _col(ref, SortColumn.status, 'Status', Icons.info_outline),
-            _col(ref, SortColumn.progress, 'Progress', Icons.linear_scale),
-            _col(ref, SortColumn.speed, 'Speed', Icons.speed),
-            _col(ref, SortColumn.size, 'Size', Icons.storage),
-            _col(ref, SortColumn.added, 'Added', Icons.schedule),
-            const DataColumn(label: SizedBox.shrink()),
-          ],
-          rows: [
-            for (final t in sorted)
-              DataRow(
-                cells: [
-                  DataCell(
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 220),
-                      child: Text(
-                        t.filename,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Pick a compact column-spacing based on available width so the
+        // table breathes on large screens but stays dense on small ones.
+        final wide = constraints.maxWidth > 900;
+        final compact = wide ? 24.0 : 12.0;
+
+        // Min width: ensure all columns are wide enough to be readable.
+        // Sum of all fixed columns + spacing + filename minimum.
+        const fixedCols = 100.0 + 140.0 + 90.0 + 90.0 + 90.0 + 50.0;
+        final minWidth = constraints.maxWidth > 720
+            ? constraints.maxWidth
+            : (fixedCols + 240.0 + compact * 6 + 60); // header cells + filename min + padding
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: minWidth),
+              child: DataTable(
+                sortColumnIndex: SortColumn.values.indexOf(sort.column),
+                sortAscending: sort.ascending,
+                columnSpacing: compact,
+                headingRowHeight: 36,
+                dataRowMinHeight: 36,
+                dataRowMaxHeight: 44,
+                columns: [
+                  DataColumn(
+                    label: const _HeaderCell(
+                        icon: Icons.text_fields, label: 'Filename'),
+                    onSort: (col, asc) {
+                      ref.read(sortStateProvider.notifier).state =
+                          ref.read(sortStateProvider).toggleTo(SortColumn.filename);
+                    },
                   ),
-                  DataCell(_StatusChip(status: t.status)),
-                  DataCell(
-                    SizedBox(
-                      width: 110,
-                      child: LinearProgressIndicator(
-                        value: t.progress.clamp(0.0, 1.0),
-                        minHeight: 6,
-                      ),
-                    ),
+                  _fixedCol(
+                    ref,
+                    icon: Icons.info_outline,
+                    label: 'Status',
+                    id: SortColumn.status,
+                    width: wide ? 100 : 80,
                   ),
-                  DataCell(Text(_formatSpeed(t.downloadSpeed))),
-                  DataCell(Text(_formatBytes(t.totalLength))),
-                  DataCell(Text(_relativeTime(t))),
-                  DataCell(_RowActions(task: t)),
+                  _fixedCol(
+                    ref,
+                    icon: Icons.linear_scale,
+                    label: 'Progress',
+                    id: SortColumn.progress,
+                    width: wide ? 140 : 110,
+                  ),
+                  _fixedCol(
+                    ref,
+                    icon: Icons.speed,
+                    label: 'Speed',
+                    id: SortColumn.speed,
+                    width: wide ? 90 : 70,
+                  ),
+                  _fixedCol(
+                    ref,
+                    icon: Icons.storage,
+                    label: 'Size',
+                    id: SortColumn.size,
+                    width: wide ? 90 : 70,
+                  ),
+                  _fixedCol(
+                    ref,
+                    icon: Icons.schedule,
+                    label: 'Added',
+                    id: SortColumn.added,
+                    width: wide ? 90 : 70,
+                  ),
+                  DataColumn(
+                    label: const SizedBox.shrink(),
+                    numeric: false,
+                    columnWidth: const IntrinsicColumnWidth(),
+                  ),
+                ],
+                rows: [
+                  for (final t in sorted)
+                    DataRow(
+                      cells: [
+                        DataCell(
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: wide ? 180 : 140,
+                              maxWidth: wide ? 320 : 200,
+                            ),
+                            child: Text(
+                              t.filename,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        DataCell(_StatusChip(status: t.status)),
+                        DataCell(
+                          SizedBox(
+                            width: wide ? 140 : 110,
+                            child: LinearProgressIndicator(
+                              value: t.progress.clamp(0.0, 1.0),
+                              minHeight: 6,
+                            ),
+                          ),
+                        ),
+                        DataCell(Text(_formatSpeed(t.downloadSpeed))),
+                        DataCell(Text(_formatBytes(t.totalLength))),
+                        DataCell(Text(_relativeTime(t))),
+                        DataCell(_RowActions(task: t)),
+                      ],
+                    ),
                 ],
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  DataColumn _col(
-    WidgetRef ref,
-    SortColumn id,
-    String label,
-    IconData icon,
-  ) {
+  DataColumn _fixedCol(
+    WidgetRef ref, {
+    required IconData icon,
+    required String label,
+    required SortColumn id,
+    required double width,
+  }) {
     return DataColumn(
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14),
-          const SizedBox(width: 4),
-          Text(label),
-        ],
-      ),
+      label: _HeaderCell(icon: icon, label: label),
+      numeric: false,
+      columnWidth: FixedColumnWidth(width),
       onSort: (col, asc) {
         ref.read(sortStateProvider.notifier).state =
             ref.read(sortStateProvider).toggleTo(id);
@@ -587,6 +747,7 @@ class _DownloadsTable extends ConsumerWidget {
     ('document', 'Documents', ''),
     ('program', 'Programs', ''),
     ('image', 'Images', ''),
+    ('other', 'Other', ''),
   ];
 }
 
@@ -633,6 +794,38 @@ class _CategorySpec {
   final String id;
   final String dirName;
   final List<String> extensions;
+}
+
+/// Compact icon + label header cell used by every sortable column.
+///
+/// Uses [MainAxisSize.max] + [Expanded] around the label so the column
+/// stays at its declared width even when the label text is long.
+class _HeaderCell extends StatelessWidget {
+  const _HeaderCell({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Row(
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          Icon(icon, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              softWrap: false,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StatusChip extends StatelessWidget {

@@ -29,6 +29,14 @@ abstract class EngineAdapter {
   /// List active (downloading) tasks.
   Future<List<Map<String, Object?>>> tellActive();
 
+  /// Fetch the current value of one or more engine-wide options.
+  /// Returns a map keyed by the requested option name.
+  Future<Map<String, Object?>> getGlobalOption(List<String> keys);
+
+  /// Patch a subset of engine-wide options. Aria2c returns a JSON `null`
+  /// on success; any error surfaces as an `EngineFailure`.
+  Future<void> changeGlobalOption(Map<String, Object?> options);
+
   /// Fetch engine version and enabled features.
   Future<EngineVersionInfo> getVersion();
 

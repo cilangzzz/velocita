@@ -53,7 +53,7 @@ class VelocitaApp extends ConsumerWidget {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFF101014),
+      scaffoldBackgroundColor: scheme.surface,
       visualDensity: VisualDensity.compact,
     );
   }

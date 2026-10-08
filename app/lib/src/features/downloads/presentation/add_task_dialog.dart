@@ -67,9 +67,12 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
     super.dispose();
   }
 
-  /// Auto-resolve saveDir from the URL or filename's extension. Falls
-  /// through to whatever the caller decides (typically the Downloads
-  /// root) when nothing matches.
+  /// Auto-resolve saveDir from the URL or filename's extension.
+  ///
+  /// Resolution order:
+  ///   1. URL/file extension matches a real category → that category's dir
+  ///   2. No extension match → fall back to `Other/` (catch-all)
+  ///   3. Caller-side fallback if [downloadsRepositoryProvider] is unset
   String _resolveAutoSaveDir() {
     final fallback = ref.read(downloadsRepositoryProvider).defaultSaveDir;
     final candidates = <String>[
@@ -77,13 +80,15 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
       _magnetController.text,
       _torrentName ?? '',
     ];
+    String? lastCandidate;
     for (final raw in candidates) {
       if (raw.isEmpty) continue;
-      // Filename is the last path segment or the whole URI for non-paths.
+      lastCandidate = raw;
       final last = raw.split('/').last.split('?').first;
       final ext = _extOf(last);
       if (ext.isEmpty) continue;
       for (final c in _defaultCategorySpecs) {
+        if (c.extensions.isEmpty) continue; // skip "Other" catch-all
         if (c.extensions.contains(ext)) {
           return fallback == null
               ? 'Downloads\\${c.dirName}'
@@ -91,7 +96,12 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
         }
       }
     }
-    return fallback ?? 'Downloads';
+    // No extension match → land in `Other/`. If the user has not typed
+    // anything yet, fall back to the bare downloads dir.
+    if (lastCandidate == null || lastCandidate.trim().isEmpty) {
+      return fallback ?? 'Downloads';
+    }
+    return fallback == null ? 'Downloads\\Other' : '$fallback\\Other';
   }
 
   String _extOf(String name) {
@@ -105,7 +115,11 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
 
   void _recomputePreview() {
     final preview = _resolveAutoSaveDir();
-    // Don't clobber the user's custom input.
+    // Always keep the text field in sync with the auto-resolved preview
+    // when the user hasn't typed anything custom. Setting `text` triggers
+    // `_onCustomDirChanged` which compares against `preview` and leaves
+    // `_customSaveDir == null` — so the next URL change still updates
+    // the field.
     if (_customSaveDir == null) {
       _saveDirController.text = preview;
     }
@@ -118,8 +132,13 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
 
   void _onCustomDirChanged() {
     final v = _saveDirController.text.trim();
+    final preview = _resolveAutoSaveDir();
     setState(() {
-      _customSaveDir = v.isEmpty ? null : v;
+      // Treat the text field as "not custom" iff its value matches what
+      // auto-detection would produce. This prevents the very first
+      // `_recomputePreview` (initState) from leaving a stale custom
+      // value behind that would later block updates.
+      _customSaveDir = (v.isEmpty || v == preview) ? null : v;
     });
   }
 
@@ -209,11 +228,6 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
               preview: _saveDirPreview,
               isCustom: _customSaveDir != null,
               onBrowse: _browseSaveDir,
-              onClearCustom: () {
-                _customSaveDir = null;
-                _saveDirController.text = _resolveAutoSaveDir();
-                setState(() {});
-              },
               saveToLabel: l.saveTo,
               customLabel: l.customDirectory,
             ),
@@ -338,15 +352,16 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
   }
 }
 
-/// Editable "save to" row. Shows the auto-resolved preview by default;
-/// once the user types anything it becomes the authoritative path.
+/// Editable "save to" row. The text field is the authoritative storage
+/// path: when the user hasn't typed anything, it auto-tracks the
+/// category-resolved preview; as soon as the user types (or picks a
+/// folder via the browse button), their value wins.
 class _SaveToField extends StatelessWidget {
   const _SaveToField({
     required this.controller,
     required this.preview,
     required this.isCustom,
     required this.onBrowse,
-    required this.onClearCustom,
     required this.saveToLabel,
     required this.customLabel,
   });
@@ -355,7 +370,6 @@ class _SaveToField extends StatelessWidget {
   final String preview;
   final bool isCustom;
   final VoidCallback onBrowse;
-  final VoidCallback onClearCustom;
   final String saveToLabel;
   final String customLabel;
 
@@ -371,22 +385,12 @@ class _SaveToField extends StatelessWidget {
                 size: 14, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 6),
             Text(
-              '$saveToLabel:',
+              saveToLabel,
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const Spacer(),
-            if (isCustom)
-              TextButton(
-                onPressed: onClearCustom,
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size(0, 28),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: Text(preview),
-              ),
           ],
         ),
+        const SizedBox(height: 4),
         Row(
           children: [
             Expanded(
@@ -437,8 +441,7 @@ class SubmitResult {
   final String? saveDir;
 }
 
-/// Same spec as `downloads_screen.dart`'s `_categorySpecs` but kept
-/// here to avoid a circular import.
+/// Top-level category specs used for both filter + add-task save-dir.
 const List<_CategorySpec> _defaultCategorySpecs = [
   _CategorySpec(
     id: 'video',
@@ -470,6 +473,10 @@ const List<_CategorySpec> _defaultCategorySpecs = [
     dirName: 'Images',
     extensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'],
   ),
+  // Catch-all: anything whose extension doesn't match the 6 above lands
+  // here. Has no extension list so it can never "win" the auto-detect;
+  // instead we use it as the fallback bucket.
+  _CategorySpec(id: 'other', dirName: 'Other', extensions: const []),
 ];
 
 class _CategorySpec {

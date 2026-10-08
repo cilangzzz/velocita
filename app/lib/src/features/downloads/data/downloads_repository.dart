@@ -81,4 +81,14 @@ class DownloadsRepository {
     final raw = await _rpc.tellStatus(gid);
     return taskFromAria2(raw);
   }
+
+  /// Read engine-wide options. The keys are aria2's native option names
+  /// (e.g. `dir`, `max-concurrent-downloads`, `max-overall-download-limit`).
+  Future<Map<String, Object?>> getGlobalOption(List<String> keys) =>
+      _rpc.getGlobalOption(keys);
+
+  /// Patch engine-wide options. Values are coerced to the aria2-expected
+  /// types by the engine itself (e.g. `int` for `max-concurrent-downloads`).
+  Future<void> changeGlobalOption(Map<String, Object?> options) =>
+      _rpc.changeGlobalOption(options);
 }

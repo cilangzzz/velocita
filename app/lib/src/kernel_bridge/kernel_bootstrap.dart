@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:logging/logging.dart';
@@ -56,6 +57,18 @@ Future<KernelFacade> bootstrapKernel() async {
       '--no-conf=true',
     ];
 
+    // If the user persisted a proxy last session, inject it on the
+    // command line. We support both HTTP (also pushable via RPC) and
+    // SOCKS5 (which aria2 only accepts at process start).
+    final persistedProxy = _loadPersistedProxy(dataDir.path);
+    if (persistedProxy != null && persistedProxy.isNotEmpty) {
+      args.add('--all-proxy=$persistedProxy');
+    }
+    final persistedBypass = _loadPersistedNoProxy(dataDir.path);
+    if (persistedBypass != null && persistedBypass.isNotEmpty) {
+      args.add('--no-proxy=$persistedBypass');
+    }
+
     final pm = Aria2ProcessManager(
       binaryPath: aria2cPath,
       workingDirectory: dataDir.path,
@@ -109,6 +122,50 @@ String _resolveAria2cPath() {
 String _randomSecret() {
   final r = (DateTime.now().microsecondsSinceEpoch ^ 0xA5A5A5A5).toRadixString(16);
   return 'velocita-$r';
+}
+
+/// Read the persisted proxy URL from `settings.json` so aria2c can be
+/// started with the correct `--all-proxy` flag. Returns `null` when
+/// the file is missing, corrupt, or the proxy is `off`.
+///
+/// The full URL is reconstructed using the same logic the settings
+/// provider's `apply()` uses, so a settings.json written by the UI is
+/// consumed symmetrically here. aria2c only supports HTTP proxies, so
+/// any persisted SOCKS5 config is silently ignored (the UI prevents
+/// selecting it in the first place).
+String? _loadPersistedProxy(String dataDir) {
+  final file = File('$dataDir/settings.json');
+  if (!file.existsSync()) return null;
+  try {
+    final raw =
+        jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+    final kind = raw['proxyKind'] as String?;
+    if (kind != 'http') return null;
+    final host = (raw['proxyHost'] as String?)?.trim() ?? '';
+    final port = (raw['proxyPort'] as int?) ?? 0;
+    if (host.isEmpty || port <= 0) return null;
+    final user = (raw['proxyUsername'] as String?)?.trim() ?? '';
+    final pass = (raw['proxyPassword'] as String?) ?? '';
+    final userInfo = user.isEmpty
+        ? ''
+        : (pass.isEmpty ? '$user@' : '$user:$pass@');
+    return 'http://$userInfo$host:$port';
+  } catch (_) {
+    return null;
+  }
+}
+
+String? _loadPersistedNoProxy(String dataDir) {
+  final file = File('$dataDir/settings.json');
+  if (!file.existsSync()) return null;
+  try {
+    final raw =
+        jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+    final bypass = (raw['proxyBypass'] as String?)?.trim() ?? '';
+    return bypass.isEmpty ? null : bypass;
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Thin facade over the kernel objects the UI actually consumes in M2.

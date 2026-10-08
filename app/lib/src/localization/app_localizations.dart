@@ -26,7 +26,7 @@ class AppLocalizations {
   // ── Catalog ──────────────────────────────────────────────
   String get appTitle => _t(_catalog['appTitle']!);
   String get downloadsTab => _t(_catalog['downloadsTab']!);
-  String get addUrl => _t(_catalog['addUrl']!);
+  String get addTask => _t(_catalog['addTask']!);
   String get refresh => _t(_catalog['refresh']!);
   String get cancel => _t(_catalog['cancel']!);
   String get download => _t(_catalog['download']!);
@@ -41,6 +41,7 @@ class AppLocalizations {
   String get documents => _t(_catalog['documents']!);
   String get programs => _t(_catalog['programs']!);
   String get images => _t(_catalog['images']!);
+  String get other => _t(_catalog['other']!);
   String get manageCategories => _t(_catalog['manageCategories']!);
   String get movies => _t(_catalog['movies']!);
   String get music => _t(_catalog['music']!);
@@ -64,6 +65,12 @@ class AppLocalizations {
   String get saveTo => _t(_catalog['saveTo']!);
   String get saveToHint => _t(_catalog['saveToHint']!);
   String get customDirectory => _t(_catalog['customDirectory']!);
+  String get close => _t(_catalog['close']!);
+  String get defaultCategoriesTitle => _t(_catalog['defaultCategoriesTitle']!);
+  String get defaultCategoriesIntro =>
+      _t(_catalog['defaultCategoriesIntro']!);
+  String get defaultCategoriesFooter =>
+      _t(_catalog['defaultCategoriesFooter']!);
   String get tabUrl => _t(_catalog['tabUrl']!);
   String get tabMagnet => _t(_catalog['tabMagnet']!);
   String get tabTorrent => _t(_catalog['tabTorrent']!);
@@ -94,6 +101,38 @@ class AppLocalizations {
   String get settingSpeedLimits => _t(_catalog['settingSpeedLimits']!);
   String get settingProxy => _t(_catalog['settingProxy']!);
   String get settingNatUpnp => _t(_catalog['settingNatUpnp']!);
+  String get settingSaveDirHint => _t(_catalog['settingSaveDirHint']!);
+  String get settingSaveDirBrowse => _t(_catalog['settingSaveDirBrowse']!);
+  String get settingMaxConcurrentHint =>
+      _t(_catalog['settingMaxConcurrentHint']!);
+  String get settingSpeedLimitLabel =>
+      _t(_catalog['settingSpeedLimitLabel']!);
+  String get settingSpeedLimitHint =>
+      _t(_catalog['settingSpeedLimitHint']!);
+  String get settingSpeedLimitUnlimited =>
+      _t(_catalog['settingSpeedLimitUnlimited']!);
+  String get settingValueUnlimited =>
+      _t(_catalog['settingValueUnlimited']!);
+  String get settingProxyOff => _t(_catalog['settingProxyOff']!);
+  String get settingProxyHttp => _t(_catalog['settingProxyHttp']!);
+  String get settingProxySocks5 => _t(_catalog['settingProxySocks5']!);
+  String get settingProxySocks5Unsupported =>
+      _t(_catalog['settingProxySocks5Unsupported']!);
+  String get settingProxyHost => _t(_catalog['settingProxyHost']!);
+  String get settingProxyPort => _t(_catalog['settingProxyPort']!);
+  String get settingProxyUsername =>
+      _t(_catalog['settingProxyUsername']!);
+  String get settingProxyPassword =>
+      _t(_catalog['settingProxyPassword']!);
+  String get settingProxyBypass => _t(_catalog['settingProxyBypass']!);
+  String get settingProxyAuthOptional =>
+      _t(_catalog['settingProxyAuthOptional']!);
+  String get settingProxyIncomplete =>
+      _t(_catalog['settingProxyIncomplete']!);
+  String get settingProxyApplied =>
+      _t(_catalog['settingProxyApplied']!);
+  String get settingNatOff => _t(_catalog['settingNatOff']!);
+  String get settingNatUpnpOn => _t(_catalog['settingNatUpnpOn']!);
 
   String _t(String key) {
     final tag = locale.countryCode != null
@@ -111,7 +150,7 @@ const Map<String, Map<String, String>> _strings = {
   'en': {
     'appTitle': 'Velocita',
     'downloadsTab': 'Downloads',
-    'addUrl': 'Add URL',
+    'addTask': 'Add Task',
     'refresh': 'Refresh',
     'cancel': 'Cancel',
     'download': 'Download',
@@ -129,6 +168,7 @@ const Map<String, Map<String, String>> _strings = {
     'documents': 'Documents',
     'programs': 'Programs',
     'images': 'Images',
+    'other': 'Other',
     'manageCategories': 'Manage categories',
     'engineConnected': 'Engine: Connected',
     'engineDisconnected': 'Engine: Disconnected',
@@ -149,6 +189,12 @@ const Map<String, Map<String, String>> _strings = {
     'saveTo': 'Save to',
     'saveToHint': '/path/to/save',
     'customDirectory': 'Custom…',
+    'close': 'Close',
+    'defaultCategoriesTitle': 'Default categories',
+    'defaultCategoriesIntro':
+        'Velocita ships 6 default categories with extension patterns:',
+    'defaultCategoriesFooter':
+        'New downloads are routed into the matching category folder.',
     'tabUrl': 'URL',
     'tabMagnet': 'Magnet',
     'tabTorrent': 'Torrent',
@@ -179,11 +225,35 @@ const Map<String, Map<String, String>> _strings = {
     'settingSpeedLimits': 'Speed limits',
     'settingProxy': 'Proxy',
     'settingNatUpnp': 'NAT/UPnP',
+    'settingSaveDirHint': 'Where new downloads land when no category matches',
+    'settingSaveDirBrowse': 'Browse…',
+    'settingMaxConcurrentHint':
+        'Maximum number of downloads aria2 will run at the same time',
+    'settingSpeedLimitLabel': 'Overall download limit',
+    'settingSpeedLimitHint':
+        'Cap the total bandwidth used by all active downloads',
+    'settingSpeedLimitUnlimited': 'Unlimited',
+    'settingValueUnlimited': '∞',
+    'settingProxyOff': 'Off',
+    'settingProxyHttp': 'HTTP',
+    'settingProxySocks5': 'SOCKS5',
+    'settingProxySocks5Unsupported':
+        'SOCKS5 is not supported by this aria2 build — only HTTP proxies work.',
+    'settingProxyHost': 'Host',
+    'settingProxyPort': 'Port',
+    'settingProxyUsername': 'Username',
+    'settingProxyPassword': 'Password',
+    'settingProxyBypass': 'No-proxy hosts',
+    'settingProxyAuthOptional': 'Optional',
+    'settingProxyIncomplete': 'Host and port are required',
+    'settingProxyApplied': 'Proxy applied to engine',
+    'settingNatOff': 'Off',
+    'settingNatUpnpOn': 'UPnP',
   },
   'zh-CN': {
     'appTitle': 'Velocita',
     'downloadsTab': '下载',
-    'addUrl': '添加 URL',
+    'addTask': '添加下载任务',
     'refresh': '刷新',
     'cancel': '取消',
     'download': '下载',
@@ -201,6 +271,7 @@ const Map<String, Map<String, String>> _strings = {
     'documents': '文档',
     'programs': '程序',
     'images': '图片',
+    'other': '其他',
     'manageCategories': '管理分类',
     'engineConnected': '引擎：已连接',
     'engineDisconnected': '引擎：未连接',
@@ -221,6 +292,10 @@ const Map<String, Map<String, String>> _strings = {
     'saveTo': '保存到',
     'saveToHint': '/保存/路径',
     'customDirectory': '自定义…',
+    'close': '关闭',
+    'defaultCategoriesTitle': '默认分类',
+    'defaultCategoriesIntro': 'Velocita 内置 6 个默认分类，按扩展名自动匹配：',
+    'defaultCategoriesFooter': '新下载会自动路由到匹配的分类文件夹。',
     'tabUrl': '链接',
     'tabMagnet': '磁链',
     'tabTorrent': '种子',
@@ -251,6 +326,28 @@ const Map<String, Map<String, String>> _strings = {
     'settingSpeedLimits': '速度限制',
     'settingProxy': '代理',
     'settingNatUpnp': 'NAT/UPnP',
+    'settingSaveDirHint': '未匹配到分类时新下载的保存位置',
+    'settingSaveDirBrowse': '浏览…',
+    'settingMaxConcurrentHint': 'aria2 同时运行的最大下载任务数',
+    'settingSpeedLimitLabel': '总下载速度上限',
+    'settingSpeedLimitHint': '限制所有活跃下载的总带宽',
+    'settingSpeedLimitUnlimited': '不限速',
+    'settingValueUnlimited': '∞',
+    'settingProxyOff': '关闭',
+    'settingProxyHttp': 'HTTP',
+    'settingProxySocks5': 'SOCKS5',
+    'settingProxySocks5Unsupported':
+        '当前 aria2 版本不支持 SOCKS5，仅支持 HTTP 代理。',
+    'settingProxyHost': '主机',
+    'settingProxyPort': '端口',
+    'settingProxyUsername': '用户名',
+    'settingProxyPassword': '密码',
+    'settingProxyBypass': '不走代理的地址',
+    'settingProxyAuthOptional': '可选',
+    'settingProxyIncomplete': '需要填写主机和端口',
+    'settingProxyApplied': '代理已下发到引擎',
+    'settingNatOff': '关闭',
+    'settingNatUpnpOn': 'UPnP',
   },
 };
 
@@ -259,7 +356,7 @@ const Map<String, Map<String, String>> _strings = {
 const Map<String, String> _catalog = {
   'appTitle': 'appTitle',
   'downloadsTab': 'downloadsTab',
-  'addUrl': 'addUrl',
+  'addTask': 'addTask',
   'refresh': 'refresh',
   'cancel': 'cancel',
   'download': 'download',
@@ -277,6 +374,7 @@ const Map<String, String> _catalog = {
   'documents': 'documents',
   'programs': 'programs',
   'images': 'images',
+  'other': 'other',
   'manageCategories': 'manageCategories',
   'engineConnected': 'engineConnected',
   'engineDisconnected': 'engineDisconnected',
@@ -297,6 +395,10 @@ const Map<String, String> _catalog = {
   'saveTo': 'saveTo',
   'saveToHint': 'saveToHint',
   'customDirectory': 'customDirectory',
+  'close': 'close',
+  'defaultCategoriesTitle': 'defaultCategoriesTitle',
+  'defaultCategoriesIntro': 'defaultCategoriesIntro',
+  'defaultCategoriesFooter': 'defaultCategoriesFooter',
   'tabUrl': 'tabUrl',
   'tabMagnet': 'tabMagnet',
   'tabTorrent': 'tabTorrent',
@@ -327,4 +429,25 @@ const Map<String, String> _catalog = {
   'settingSpeedLimits': 'settingSpeedLimits',
   'settingProxy': 'settingProxy',
   'settingNatUpnp': 'settingNatUpnp',
+  'settingSaveDirHint': 'settingSaveDirHint',
+  'settingSaveDirBrowse': 'settingSaveDirBrowse',
+  'settingMaxConcurrentHint': 'settingMaxConcurrentHint',
+  'settingSpeedLimitLabel': 'settingSpeedLimitLabel',
+  'settingSpeedLimitHint': 'settingSpeedLimitHint',
+  'settingSpeedLimitUnlimited': 'settingSpeedLimitUnlimited',
+  'settingValueUnlimited': 'settingValueUnlimited',
+  'settingProxyOff': 'settingProxyOff',
+  'settingProxyHttp': 'settingProxyHttp',
+  'settingProxySocks5': 'settingProxySocks5',
+  'settingProxySocks5Unsupported': 'settingProxySocks5Unsupported',
+  'settingProxyHost': 'settingProxyHost',
+  'settingProxyPort': 'settingProxyPort',
+  'settingProxyUsername': 'settingProxyUsername',
+  'settingProxyPassword': 'settingProxyPassword',
+  'settingProxyBypass': 'settingProxyBypass',
+  'settingProxyAuthOptional': 'settingProxyAuthOptional',
+  'settingProxyIncomplete': 'settingProxyIncomplete',
+  'settingProxyApplied': 'settingProxyApplied',
+  'settingNatOff': 'settingNatOff',
+  'settingNatUpnpOn': 'settingNatUpnpOn',
 };

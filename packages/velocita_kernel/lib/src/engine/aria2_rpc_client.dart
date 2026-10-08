@@ -184,6 +184,26 @@ class Aria2RpcClient implements EngineAdapter {
     params.insert(0, 'token:$secret');
   }
 
+  /// `aria2.getGlobalOption` — fetch the current value of one or more
+  /// engine-wide options (e.g. `dir`, `max-concurrent-downloads`).
+  Future<Map<String, Object?>> getGlobalOption(List<String> keys) async {
+    final proto = _requireProtocol();
+    final params = <Object?>[keys];
+    _withSecretInPlace(params);
+    final result = await proto.call('aria2.getGlobalOption', params);
+    return (result as Map).cast<String, Object?>();
+  }
+
+  /// `aria2.changeGlobalOption` — patch a subset of engine-wide options.
+  /// aria2 returns a JSON `null` on success; any failure surfaces as an
+  /// `EngineFailure` (RPC-level error or transport error).
+  Future<void> changeGlobalOption(Map<String, Object?> options) async {
+    final proto = _requireProtocol();
+    final params = <Object?>[options];
+    _withSecretInPlace(params);
+    await proto.call('aria2.changeGlobalOption', params);
+  }
+
   List<Object?> _withSecret(List<Object?> params) =>
       secret.isEmpty ? params : <Object?>['token:$secret', ...params];
 

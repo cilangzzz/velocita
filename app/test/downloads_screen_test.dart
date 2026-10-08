@@ -34,6 +34,13 @@ class _FakeRepo implements DownloadsRepository {
       const [];
   @override
   Future<TaskSummary?> oneTask(String gid) async => null;
+
+  @override
+  Future<Map<String, Object?>> getGlobalOption(List<String> keys) async =>
+      const {};
+
+  @override
+  Future<void> changeGlobalOption(Map<String, Object?> options) async {}
 }
 
 void main() {
