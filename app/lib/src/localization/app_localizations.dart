@@ -163,6 +163,17 @@ class AppLocalizations {
   String get invertSelection => _t(_catalog['invertSelection']!);
   String get clearSelection => _t(_catalog['clearSelection']!);
   String get selectedCount => _t(_catalog['selectedCount']!);
+  String get customizeColumns => _t(_catalog['customizeColumns']!);
+  String get columnFilename => _t(_catalog['columnFilename']!);
+  String get columnStatus => _t(_catalog['columnStatus']!);
+  String get columnProgress => _t(_catalog['columnProgress']!);
+  String get columnSpeed => _t(_catalog['columnSpeed']!);
+  String get columnSize => _t(_catalog['columnSize']!);
+  String get columnAdded => _t(_catalog['columnAdded']!);
+  String get columnLocked => _t(_catalog['columnLocked']!);
+  String get moveUp => _t(_catalog['moveUp']!);
+  String get moveDown => _t(_catalog['moveDown']!);
+  String get resetColumns => _t(_catalog['resetColumns']!);
   String get browserIntegration => _t(_catalog['browserIntegration']!);
   String get browserIntegrationEnabled =>
       _t(_catalog['browserIntegrationEnabled']!);
@@ -172,6 +183,10 @@ class AppLocalizations {
       _t(_catalog['browserIntegrationDisabled']!);
   String get browserIntegrationStarting =>
       _t(_catalog['browserIntegrationStarting']!);
+  String get browserIntegrationGenerateRegFile =>
+      _t(_catalog['browserIntegrationGenerateRegFile']!);
+  String get browserIntegrationRegFileWritten =>
+      _t(_catalog['browserIntegrationRegFileWritten']!);
   String get browserIntegrationConfirm =>
       _t(_catalog['browserIntegrationConfirm']!);
   String get browserIntegrationConfirmHint =>
@@ -352,12 +367,26 @@ const Map<String, Map<String, String>> _strings = {
     'invertSelection': 'Invert',
     'clearSelection': 'Clear',
     'selectedCount': 'N selected',
+    'customizeColumns': 'Customize columns',
+    'columnFilename': 'Filename',
+    'columnStatus': 'Status',
+    'columnProgress': 'Progress',
+    'columnSpeed': 'Speed',
+    'columnSize': 'Size',
+    'columnAdded': 'Added',
+    'columnLocked': 'Locked',
+    'moveUp': 'Move up',
+    'moveDown': 'Move down',
+    'resetColumns': 'Reset',
     'browserIntegration': 'Browser integration',
     'browserIntegrationEnabled': 'Enable browser integration',
     'browserIntegrationEnabledHint':
         'When on, Velocita listens on a local port and accepts downloads from Chrome / Edge / Firefox extensions. When off, no listening socket is opened.',
     'browserIntegrationDisabled': 'Disabled — local IPC server is not running',
     'browserIntegrationStarting': 'Starting…',
+    'browserIntegrationGenerateRegFile': 'Generate registry file…',
+    'browserIntegrationRegFileWritten':
+        'Registry file written — double-click it in Explorer to install.',
     'browserIntegrationConfirm':
         'Show confirmation popup for browser-sent downloads',
     'browserIntegrationConfirmHint':
@@ -519,12 +548,25 @@ const Map<String, Map<String, String>> _strings = {
     'invertSelection': '反选',
     'clearSelection': '取消选择',
     'selectedCount': '已选 N 项',
+    'customizeColumns': '自定义表头',
+    'columnFilename': '文件名',
+    'columnStatus': '状态',
+    'columnProgress': '进度',
+    'columnSpeed': '速度',
+    'columnSize': '大小',
+    'columnAdded': '添加时间',
+    'columnLocked': '已锁定',
+    'moveUp': '上移',
+    'moveDown': '下移',
+    'resetColumns': '重置',
     'browserIntegration': '浏览器集成',
     'browserIntegrationEnabled': '启用浏览器集成',
     'browserIntegrationEnabledHint':
         '开启时，Velocita 在本地端口监听，接收来自 Chrome / Edge / Firefox 扩展的下载；关闭时，不打开任何监听套接字。',
     'browserIntegrationDisabled': '已禁用 — 本地 IPC 服务未运行',
     'browserIntegrationStarting': '正在启动…',
+    'browserIntegrationGenerateRegFile': '生成注册表文件…',
+    'browserIntegrationRegFileWritten': '注册表文件已生成 — 在资源管理器中双击即可安装。',
     'browserIntegrationConfirm': '对浏览器发来的下载显示确认弹窗',
     'browserIntegrationConfirmHint':
         '开启时，浏览器发来的每个下载都会先弹出确认框；关闭时直接入队。',
@@ -675,11 +717,24 @@ const Map<String, String> _catalog = {
   'invertSelection': 'invertSelection',
   'clearSelection': 'clearSelection',
   'selectedCount': 'selectedCount',
+  'customizeColumns': 'customizeColumns',
+  'columnFilename': 'columnFilename',
+  'columnStatus': 'columnStatus',
+  'columnProgress': 'columnProgress',
+  'columnSpeed': 'columnSpeed',
+  'columnSize': 'columnSize',
+  'columnAdded': 'columnAdded',
+  'columnLocked': 'columnLocked',
+  'moveUp': 'moveUp',
+  'moveDown': 'moveDown',
+  'resetColumns': 'resetColumns',
   'browserIntegration': 'browserIntegration',
   'browserIntegrationEnabled': 'browserIntegrationEnabled',
   'browserIntegrationEnabledHint': 'browserIntegrationEnabledHint',
   'browserIntegrationDisabled': 'browserIntegrationDisabled',
   'browserIntegrationStarting': 'browserIntegrationStarting',
+  'browserIntegrationGenerateRegFile': 'browserIntegrationGenerateRegFile',
+  'browserIntegrationRegFileWritten': 'browserIntegrationRegFileWritten',
   'browserIntegrationConfirm': 'browserIntegrationConfirm',
   'browserIntegrationConfirmHint': 'browserIntegrationConfirmHint',
   'browserIntegrationListening': 'browserIntegrationListening',

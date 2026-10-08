@@ -67,6 +67,11 @@ Future<void> main() async {
   // in sync with the binary even when `flutter run` moves the exe
   // between builds.
   await selfHeal();
+  // M6: also self-heal the `velocita://` URL-scheme registration in
+  // HKCU. Without this, navigating to a `velocita://add?url=…` link
+  // in a browser falls off into a blank page or a search box
+  // because the OS doesn't know which exe to launch.
+  await selfHealUrlScheme();
 
   // Bootstrap the kernel (spawn aria2 → connect WS → emit EngineReady).
   // This returns once the engine is connected; a single instance is shared

@@ -9,6 +9,8 @@ import '../../../kernel_bridge/kernel_provider.dart';
 import '../../../localization/app_localizations.dart';
 import '../domain/download_task.dart';
 import 'add_task_dialog.dart';
+import 'columns_dialog.dart';
+import 'columns_provider.dart';
 import 'selected_tasks_provider.dart';
 import 'task_list_provider.dart';
 import 'task_visibility.dart';
@@ -90,6 +92,15 @@ class _Toolbar extends ConsumerWidget {
         builder: (context, constraints) {
           // Build the two toolbar clusters once; pick a layout that fits.
           final left = <Widget>[
+            IconButton(
+              tooltip: l.customizeColumns,
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => const ColumnsDialog(),
+              ),
+              icon: const Icon(Icons.view_column),
+            ),
+            const SizedBox(width: 4),
             // Status filter dropdown (lives in toolbar, not sidebar).
             DropdownButton<DownloadFilter>(
               value: filter,
@@ -424,6 +435,7 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final tasks = widget.tasks;
     final filter = ref.watch(taskFilterProvider);
     final categoryId = ref.watch(selectedCategoryProvider);
@@ -436,55 +448,68 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
       return _EmptyState(filter: filter);
     }
 
+    // Default visible columns. Used while columnsProvider is still
+    // loading or if reading it failed.
+    final columnState = ref
+            .watch(columnsProvider)
+            .valueOrNull ??
+        const ColumnsState(
+          order: [
+            ColumnId.filename,
+            ColumnId.status,
+            ColumnId.progress,
+            ColumnId.speed,
+            ColumnId.size,
+            ColumnId.added,
+          ],
+          hidden: <ColumnId>{},
+        );
+    final visibleColumns = columnState.visibleSpecs;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // Column widths. Filename absorbs whatever is left over; the rest
         // are fixed so the table stays consistent as the window resizes.
         const checkboxW = 40.0;
-        const statusW = 120.0;
-        const progressW = 150.0;
-        const speedW = 90.0;
-        const sizeW = 90.0;
-        const addedW = 110.0;
         const gapW = 16.0;
         // Header + every data row carry 4px of left/right padding, so the
         // columns inside must sum to width - 8 or the Row overflows by 8px
         // (the yellow/black warning stripes on the right edge).
         const sidePad = 8.0;
-        const gaps = gapW * 6; // 7 columns → 6 gaps
-        const fixed = checkboxW +
-            statusW +
-            progressW +
-            speedW +
-            sizeW +
-            addedW +
-            gaps;
+        // Fixed widths exclude the variable (filename) column.
+        final fixedColumnsWidth = visibleColumns
+            .where((c) => !c.variable)
+            .fold<double>(0, (s, c) => s + c.width);
+        // One gap after the leading checkbox + one gap after every column.
+        final gaps = gapW * (visibleColumns.length + 1);
+        final fixed = checkboxW + fixedColumnsWidth + gaps;
         const filenameMin = 200.0;
         final tableMin = fixed + filenameMin + 16;
 
         final tableWidth = constraints.maxWidth > tableMin
             ? constraints.maxWidth
             : tableMin;
-        final filenameW = tableWidth - fixed - sidePad;
+        final variableW = tableWidth - fixed - sidePad;
 
         Widget hGap() => const SizedBox(width: gapW);
 
         /// A clickable header cell sharing the body's column width.
-        Widget headerCell(String label, SortColumn id, double w) {
-          final active = sort.column == id;
+        Widget headerCellForSpec(ColumnSpec spec, double w) {
+          final sortId = _sortIdFor(spec.id);
+          final active = sort.column == sortId;
           return SizedBox(
             width: w,
             child: InkWell(
               onTap: () {
                 ref.read(sortStateProvider.notifier).state =
-                    ref.read(sortStateProvider).toggleTo(id);
+                    ref.read(sortStateProvider).toggleTo(sortId);
               },
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Flexible(
                     child: Text(
-                      label,
+                      _labelFor(l, spec.id),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       softWrap: false,
@@ -506,6 +531,12 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
             ),
           );
         }
+
+        /// Per-column data cell. Variable-width column gets [variableW]
+        /// so the filename absorbs the leftover space; all others use
+        /// their fixed spec width.
+        double widthFor(ColumnSpec spec) =>
+            spec.variable ? variableW : spec.width;
 
         final dividerColor = Theme.of(context).dividerColor;
         final scheme = Theme.of(context).colorScheme;
@@ -542,17 +573,10 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
                             onToggle: () => _toggleSelectAll(sorted),
                           ),
                           hGap(),
-                          headerCell('Filename', SortColumn.filename, filenameW),
-                          hGap(),
-                          headerCell('Status', SortColumn.status, statusW),
-                          hGap(),
-                          headerCell('Progress', SortColumn.progress, progressW),
-                          hGap(),
-                          headerCell('Speed', SortColumn.speed, speedW),
-                          hGap(),
-                          headerCell('Size', SortColumn.size, sizeW),
-                          hGap(),
-                          headerCell('Added', SortColumn.added, addedW),
+                          for (final spec in visibleColumns) ...[
+                            headerCellForSpec(spec, widthFor(spec)),
+                            hGap(),
+                          ],
                         ],
                       ),
                     ),
@@ -594,46 +618,13 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
                                       onTap: () => _toggleGid(t.gid),
                                     ),
                                     hGap(),
-                                    SizedBox(
-                                      width: filenameW,
-                                      child: Text(
-                                        t.filename,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        softWrap: false,
+                                    for (final spec in visibleColumns) ...[
+                                      SizedBox(
+                                        width: widthFor(spec),
+                                        child: _dataCellFor(spec, t),
                                       ),
-                                    ),
-                                    hGap(),
-                                    SizedBox(
-                                      width: statusW,
-                                      child: _StatusChip(status: t.status),
-                                    ),
-                                    hGap(),
-                                    SizedBox(
-                                      width: progressW,
-                                      child: LinearProgressIndicator(
-                                        value: t.progress.clamp(0.0, 1.0),
-                                        minHeight: 6,
-                                      ),
-                                    ),
-                                    hGap(),
-                                    SizedBox(
-                                      width: speedW,
-                                      child: _ellipsisText(
-                                          _formatSpeed(t.downloadSpeed)),
-                                    ),
-                                    hGap(),
-                                    SizedBox(
-                                      width: sizeW,
-                                      child: _ellipsisText(
-                                          _formatBytes(t.totalLength)),
-                                    ),
-                                    hGap(),
-                                    SizedBox(
-                                      width: addedW,
-                                      child:
-                                          _ellipsisText(_relativeTime(t)),
-                                    ),
+                                      hGap(),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -651,14 +642,6 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
       },
     );
   }
-
-  /// Overflow-safe text cell for narrow columns.
-  Widget _ellipsisText(String text) => Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        softWrap: false,
-      );
 
   /// Toggle [gid]'s membership in the global selection set.
   void _toggleGid(String gid) {
@@ -1188,4 +1171,84 @@ enum _BatchAction {
   pause,
   resume,
   delete,
+}
+
+// ── Column-rendering helpers (driven by columnsProvider) ──────
+
+/// Renders the cell body for a single column. Returns the right widget
+/// for the column's data type.
+Widget _dataCellFor(ColumnSpec spec, TaskSummary t) {
+  switch (spec.id) {
+    case ColumnId.filename:
+      return Text(
+        t.filename,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+      );
+    case ColumnId.status:
+      return _StatusChip(status: t.status);
+    case ColumnId.progress:
+      return LinearProgressIndicator(
+        value: t.progress.clamp(0.0, 1.0),
+        minHeight: 6,
+      );
+    case ColumnId.speed:
+      return Text(
+        _formatSpeed(t.downloadSpeed),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+      );
+    case ColumnId.size:
+      return Text(
+        _formatBytes(t.totalLength),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+      );
+    case ColumnId.added:
+      return Text(
+        _relativeTime(t),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+      );
+  }
+}
+
+/// Map a [ColumnId] to the [SortColumn] it sorts by. 1:1 today; the
+/// indirection lets us decouple the two enums later if needed.
+SortColumn _sortIdFor(ColumnId id) {
+  switch (id) {
+    case ColumnId.filename:
+      return SortColumn.filename;
+    case ColumnId.status:
+      return SortColumn.status;
+    case ColumnId.progress:
+      return SortColumn.progress;
+    case ColumnId.speed:
+      return SortColumn.speed;
+    case ColumnId.size:
+      return SortColumn.size;
+    case ColumnId.added:
+      return SortColumn.added;
+  }
+}
+
+String _labelFor(AppLocalizations l, ColumnId id) {
+  switch (id) {
+    case ColumnId.filename:
+      return l.columnFilename;
+    case ColumnId.status:
+      return l.columnStatus;
+    case ColumnId.progress:
+      return l.columnProgress;
+    case ColumnId.speed:
+      return l.columnSpeed;
+    case ColumnId.size:
+      return l.columnSize;
+    case ColumnId.added:
+      return l.columnAdded;
+  }
 }

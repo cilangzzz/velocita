@@ -84,6 +84,15 @@ Future<String> installFor(BrowserKind kind) async {
   );
   _log.info('wrote host manifest: ${file.path}');
 
+  // The velocita:// URL scheme must be registered too — without it,
+  // browser navigation to `velocita://add?url=…` falls off into a
+  // blank page or a search box. Re-registering is idempotent.
+  await win.registerVelocitaUrlScheme();
+  // Belt-and-suspenders: also write a hand-crafted .reg file the
+  // user can double-click to import if the live `reg add` path
+  // failed (anti-virus blocking, shell-quoting weirdness, etc.).
+  _lastRegFile = await writeRegFile(hostJsonPath: file.path);
+
   switch (kind) {
     case BrowserKind.chrome:
       await win.registerChrome(file.path);
@@ -108,7 +117,8 @@ Future<void> uninstallFor(BrowserKind kind) async {
   }
 }
 
-/// Removes every browser registration + the host JSON.
+/// Removes every browser registration, the `velocita://` URL scheme,
+/// and the host JSON.
 Future<void> uninstallAll() async {
   for (final k in BrowserKind.values) {
     try {
@@ -116,6 +126,11 @@ Future<void> uninstallAll() async {
     } catch (e) {
       _log.warning('unregister $k failed: $e');
     }
+  }
+  try {
+    await win.unregisterVelocitaUrlScheme();
+  } catch (e) {
+    _log.warning('unregister velocita:// scheme failed: $e');
   }
   final file = await _hostJsonFile();
   if (await file.exists()) await file.delete();
@@ -146,6 +161,76 @@ Future<void> selfHeal() async {
     _log.warning('self-heal failed: $e');
   }
 }
+
+/// Self-heals the `velocita://` URL scheme registration. Cheap; safe
+/// to call on every app start. Re-writes the four registry entries
+/// when the launcher's path differs from the current
+/// `Platform.resolvedExecutable` (e.g. after a `flutter run` rebuild
+/// moved the exe, or the user installed Velocita to a new location).
+Future<void> selfHealUrlScheme() async {
+  try {
+    await win.registerVelocitaUrlScheme();
+  } catch (e) {
+    _log.warning('url-scheme self-heal failed: $e');
+  }
+}
+
+/// Writes a hand-crafted `.reg` file containing every registry entry
+/// the feature needs (Native Messaging host JSONs + the
+/// `velocita://` URL scheme handler). The user can double-click the
+/// file in Explorer to import it — useful when the live
+/// `Process.run('reg', ...)` path is being blocked by antivirus, the
+/// shell is mangling the value, or the install ran before the
+/// per-user permission was granted.
+///
+/// Returns the absolute path of the generated file.
+Future<File> writeRegFile({String? exePath, String? hostJsonPath}) async {
+  final exe = exePath ?? Platform.resolvedExecutable;
+  final json = hostJsonPath ?? (await _hostJsonFile()).path;
+  final escapedExe = _escapeReg(exe);
+  final escapedJson = _escapeReg(json);
+  // In a .reg file:
+  //   * Backslashes in the *value* must be doubled (otherwise regedit
+  //     interprets them as escape sequences).
+  //   * Embedded double-quotes in the value are escaped as `\"`.
+  final content = StringBuffer()
+    ..writeln('Windows Registry Editor Version 5.00')
+    ..writeln()
+    ..writeln(r'[HKEY_CURRENT_USER\Software\Google\Chrome\NativeMessagingHosts\com.velocita.host]')
+    ..writeln('@="$escapedJson"')
+    ..writeln()
+    ..writeln(r'[HKEY_CURRENT_USER\Software\Microsoft\Edge\NativeMessagingHosts\com.velocita.host]')
+    ..writeln('@="$escapedJson"')
+    ..writeln()
+    ..writeln(r'[HKEY_CURRENT_USER\Software\Mozilla\NativeMessagingHosts\com.velocita.host]')
+    ..writeln('@="$escapedJson"')
+    ..writeln()
+    ..writeln(r'[HKEY_CURRENT_USER\Software\Classes\velocita]')
+    ..writeln('@="URL:Velocita Protocol"')
+    ..writeln('"URL Protocol"=""')
+    ..writeln()
+    ..writeln(r'[HKEY_CURRENT_USER\Software\Classes\velocita\DefaultIcon]')
+    ..writeln('@="\\"$escapedExe\\",1"')
+    ..writeln()
+    ..writeln(r'[HKEY_CURRENT_USER\Software\Classes\velocita\shell\open\command]')
+    ..writeln('@="\\"$escapedExe\\" \\"%1\\""')
+    ..writeln();
+  final dir = await _hostJsonDir();
+  final out = File('${dir.path}/velocita-install.reg');
+  await out.writeAsString(content.toString());
+  _log.info('wrote .reg file: ${out.path}');
+  return out;
+}
+
+String _escapeReg(String s) =>
+    s.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+
+/// Path of the `.reg` file the most recent [writeRegFile] call
+/// produced. `null` if the file has not been written yet in this
+/// process. The Settings UI exposes a "Generate registry file"
+/// button that writes + reveals this file in Explorer.
+File? _lastRegFile;
+File? get lastRegFilePath => _lastRegFile;
 
 /// Returns the per-browser "extensions page" URL — used by the
 /// Settings UI to open the right place after install.

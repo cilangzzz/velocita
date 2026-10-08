@@ -25,8 +25,11 @@ export 'data/host_installer.dart'
         installFor,
         uninstallFor,
         uninstallAll,
-        selfHeal;
-export 'data/host_installer_windows.dart';
+        selfHeal,
+        selfHealUrlScheme,
+        writeRegFile;
+export 'data/host_installer_windows.dart'
+    show registerVelocitaUrlScheme, unregisterVelocitaUrlScheme;
 export 'data/browser_integration_settings_provider.dart'
     show
         browserIntegrationSettingsProvider,

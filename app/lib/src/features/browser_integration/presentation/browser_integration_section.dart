@@ -8,6 +8,8 @@
 // but does NOT share the private `_Section` widget from
 // `settings_page.dart` — that one is private and we want a
 // self-contained file.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -110,6 +112,21 @@ class _BrowserIntegrationContent extends ConsumerWidget {
               label: Text(l.uninstallIntegration),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        // Manual-install escape hatch: writes a `.reg` file the user
+        // can double-click to import everything in one go. Useful
+        // when the live `reg add` path is being blocked (AV / shell
+        // quoting / corporate group policy) and as a belt-and-
+        // suspenders when the user just wants to see exactly what
+        // registry keys are about to be written.
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: settings.enabled ? () => _generateRegFile(context) : null,
+            icon: const Icon(Icons.description_outlined, size: 16),
+            label: Text(l.browserIntegrationGenerateRegFile),
+          ),
         ),
       ],
     );
@@ -242,6 +259,38 @@ Future<void> _uninstallAll(BuildContext context, WidgetRef ref) async {
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(content: Text('Browser integration uninstalled')),
   );
+}
+
+/// Write a `.reg` file the user can double-click in Explorer to
+/// import every registry entry the feature needs. After writing,
+/// reveal the file in the OS file manager so the user just has to
+/// double-click it.
+Future<void> _generateRegFile(BuildContext context) async {
+  final l = AppLocalizations.of(context);
+  try {
+    final f = await writeRegFile();
+    if (!context.mounted) return;
+    // Reveal in Explorer. `explorer.exe /select,<path>` opens the
+    // containing folder with the file highlighted.
+    if (Platform.isWindows) {
+      await Process.start(
+        'explorer.exe',
+        ['/select,${f.path}'],
+      );
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        '${l.browserIntegrationRegFileWritten}\n${f.path}',
+      ),
+      duration: const Duration(seconds: 6),
+    ));
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to write .reg file: $e')),
+    );
+  }
 }
 
 // ── small duplicated style primitives (private to settings_page.dart) ──
