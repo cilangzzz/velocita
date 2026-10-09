@@ -15,29 +15,35 @@ final rootNavigatorKey = GlobalKey<NavigatorState>();
 /// The single source of truth for navigation. Built once at startup.
 ///
 /// Layout: `[NavigationRail | Body]` — both children scroll independently.
+///
+/// Each tab is mounted exactly once via [IndexedStack]. Route builders
+/// return [SizedBox.shrink] because the real pages live inside the
+/// IndexedStack; this keeps scroll positions, TextEditingController
+/// buffers, and provider subscriptions alive across switches and makes
+/// tab swaps instant instead of paying a full page teardown + remount.
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
     navigatorKey: rootNavigatorKey,
     routes: [
       ShellRoute(
-        builder: (context, state, child) => _ShellLayout(child: child),
+        builder: (context, state, _) => const _ShellLayout(),
         routes: [
           GoRoute(
             path: '/',
-            builder: (context, state) => const downloads.DownloadsScreen(),
+            builder: (_, __) => const SizedBox.shrink(),
           ),
           GoRoute(
             path: '/scheduler',
-            builder: (context, state) => const scheduler.SchedulerPage(),
+            builder: (_, __) => const SizedBox.shrink(),
           ),
           GoRoute(
             path: '/plugins',
-            builder: (context, state) => const plugins.PluginsPage(),
+            builder: (_, __) => const SizedBox.shrink(),
           ),
           GoRoute(
             path: '/settings',
-            builder: (context, state) => const settings.SettingsPage(),
+            builder: (_, __) => const SizedBox.shrink(),
           ),
         ],
       ),
@@ -46,8 +52,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 class _ShellLayout extends StatelessWidget {
-  const _ShellLayout({required this.child});
-  final Widget child;
+  const _ShellLayout();
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +64,6 @@ class _ShellLayout extends StatelessWidget {
       '/settings' => 3,
       _ => 0,
     };
-    final l = AppLocalizations.of(context);
 
     return Scaffold(
       body: SafeArea(
@@ -83,7 +87,22 @@ class _ShellLayout extends StatelessWidget {
               ('settings', Icons.settings_outlined, Icons.settings),
             ]),
             const VerticalDivider(width: 1),
-            Expanded(child: child),
+            // IndexedStack keeps all four pages mounted; switching tabs
+            // just changes `index` so the offstage branches aren't torn
+            // down. StackFit.expand makes the body fill the row's width,
+            // which DownloadsScreen's inner `Expanded` relies on.
+            Expanded(
+              child: IndexedStack(
+                index: index,
+                sizing: StackFit.expand,
+                children: const [
+                  downloads.DownloadsScreen(),
+                  scheduler.SchedulerPage(),
+                  plugins.PluginsPage(),
+                  settings.SettingsPage(),
+                ],
+              ),
+            ),
           ],
         ),
       ),

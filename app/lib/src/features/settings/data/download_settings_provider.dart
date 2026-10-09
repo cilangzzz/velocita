@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../platform/auto_start.dart';
 import '../../downloads/data/downloads_repository.dart';
 import '../domain/download_settings.dart';
 
@@ -128,6 +129,9 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
     String? proxyBypass,
     int? split,
     int? maxConnectionPerServer,
+    bool? autoStart,
+    bool? silentStart,
+    bool? startHiddenToTray,
   }) async {
     final current = state.value;
     if (current == null) return; // not loaded yet
@@ -144,10 +148,32 @@ class DownloadSettingsNotifier extends AsyncNotifier<DownloadSettings> {
       proxyBypass: proxyBypass,
       split: split,
       maxConnectionPerServer: maxConnectionPerServer,
+      autoStart: autoStart,
+      silentStart: silentStart,
+      startHiddenToTray: startHiddenToTray,
     );
     final options = buildGlobalOptionPatches(current, next);
     if (options.isNotEmpty) {
       await ref.read(downloadsRepositoryProvider).changeGlobalOption(options);
+    }
+    // Sync OS-level autostart after the in-memory + persisted state is
+    // settled. We always write the **effective** value (autoStart with
+    // silentStart in the same toggle), so toggling silentStart alone
+    // while autoStart is true updates the Run value too. If the user
+    // turns silentStart on while autoStart is off, the silent flag is
+    // persisted in settings.json for the next time they enable
+    // autostart — we don't proactively register the Run entry just for
+    // a silent-only change.
+    if (autoStart != null || (current.autoStart && silentStart != null)) {
+      try {
+        await AutoStart.setEnabled(
+          enable: next.autoStart,
+          silent: next.silentStart,
+        );
+      } catch (e) {
+        // Don't fail the whole apply() — the in-memory + persisted
+        // state is correct; the user can retry from the toggle.
+      }
     }
     state = AsyncData(next);
     await _persist(next);

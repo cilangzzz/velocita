@@ -32,85 +32,266 @@ class SettingsPage extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _Section(title: l.general),
-        ListTile(
-          title: Text(l.settingsTheme),
-          trailing: SegmentedButton<ThemeMode>(
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
+        // General — theme + language.
+        _SettingsCard(
+          title: l.general,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l.settingsTheme),
+              trailing: SegmentedButton<ThemeMode>(
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                ),
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    label: Text(l.themeLight),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    label: Text(l.themeDark),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.system,
+                    label: Text(l.themeSystem),
+                  ),
+                ],
+                selected: {themeMode},
+                onSelectionChanged: (sel) {
+                  ref
+                      .read(themeModeProvider.notifier)
+                      .setThemeMode(sel.first);
+                },
+              ),
             ),
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(
-                value: ThemeMode.light,
-                label: Text(l.themeLight),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l.settingsLanguage),
+              subtitle: Text(
+                locale.languageCode == 'zh' ? l.langChinese : l.langEnglish,
               ),
-              ButtonSegment(
-                value: ThemeMode.dark,
-                label: Text(l.themeDark),
+              trailing: DropdownButton<String>(
+                value: locale.languageCode,
+                items: [
+                  DropdownMenuItem(value: 'en', child: Text(l.langEnglish)),
+                  DropdownMenuItem(value: 'zh', child: Text(l.langChinese)),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  ref.read(localeProvider.notifier).setLocale(
+                        v == 'zh' ? const Locale('zh', 'CN') : Locale(v),
+                      );
+                },
               ),
-              ButtonSegment(
-                value: ThemeMode.system,
-                label: Text(l.themeSystem),
-              ),
-            ],
-            selected: {themeMode},
-            onSelectionChanged: (sel) {
-              ref.read(themeModeProvider.notifier).setThemeMode(sel.first);
-            },
-          ),
+            ),
+          ],
         ),
-        ListTile(
-          title: Text(l.settingsLanguage),
-          subtitle: Text(
-            locale.languageCode == 'zh' ? l.langChinese : l.langEnglish,
-          ),
-          trailing: DropdownButton<String>(
-            value: locale.languageCode,
-            items: [
-              DropdownMenuItem(value: 'en', child: Text(l.langEnglish)),
-              DropdownMenuItem(value: 'zh', child: Text(l.langChinese)),
-            ],
-            onChanged: (v) {
-              if (v == null) return;
-              ref.read(localeProvider.notifier).setLocale(
-                    v == 'zh' ? const Locale('zh', 'CN') : Locale(v),
-                  );
-            },
-          ),
+        // Startup — auto-launch behaviour at sign-in.
+        _SettingsCard(
+          title: l.startup,
+          children: const [_AutoStartTile(), _StartHiddenToTrayTile()],
         ),
-        const Divider(),
-        _Section(title: l.downloads),
-        const _SaveDirTile(),
-        const _MaxConcurrentTile(),
-        const _SpeedLimitTile(),
-        const _SplitTile(),
-        const _MaxConnPerServerTile(),
-        const Divider(),
-        _Section(title: l.connection),
-        const _ProxyTile(),
-        const _NatUpnpTile(),
-        const Divider(),
+        // Downloads — where downloads go and the headline caps.
+        _SettingsCard(
+          title: l.downloads,
+          children: const [
+            _SaveDirTile(),
+            _MaxConcurrentTile(),
+            _SpeedLimitTile(),
+          ],
+        ),
+        // Advanced — multi-connection tuning for power users.
+        _SettingsCard(
+          title: l.advanced,
+          children: const [
+            _SplitTile(),
+            _MaxConnPerServerTile(),
+          ],
+        ),
+        // Connection — outbound network (proxy, NAT).
+        _SettingsCard(
+          title: l.connection,
+          children: const [
+            _ProxyTile(),
+            _NatUpnpTile(),
+          ],
+        ),
+        // Browser integration — its own section from a parallel feature.
         const BrowserIntegrationSection(),
       ],
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title});
+/// A grouped settings panel: card with a coloured section title and
+/// a list of `children` (typically `ListTile`s with
+/// `contentPadding: EdgeInsets.zero` so the card's own padding
+/// provides the inset). Divider is intentionally not auto-inserted
+/// between items — cards are tight enough that extra rules add noise.
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.title, required this.children});
   final String title;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (title.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  title.toUpperCase(),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: scheme.primary,
+                    letterSpacing: 0.6,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ...children,
+          ],
+        ),
       ),
+    );
+  }
+}
+
+
+// ── Startup tiles ──────────────────────────────────────────
+
+/// "Start at sign-in" + "Start minimized to tray" toggles. The two
+/// are siblings because silent-start has no effect on its own
+/// (a manual launch from a shortcut ignores `--start-minimized` and
+/// only the auto-launched copy honours it), but the user can preview
+/// either one before committing to a full auto-start.
+class _AutoStartTile extends ConsumerWidget {
+  const _AutoStartTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final settings = ref.watch(downloadSettingsProvider);
+    return settings.when(
+      data: (s) => _AutoStartForm(initialAuto: s.autoStart, initialSilent: s.silentStart),
+      loading: () => const _SkeletonRow(),
+      error: (e, _) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(l.settingAutoStart),
+        subtitle: Text(e.toString()),
+      ),
+    );
+  }
+}
+
+class _AutoStartForm extends ConsumerStatefulWidget {
+  const _AutoStartForm({required this.initialAuto, required this.initialSilent});
+  final bool initialAuto;
+  final bool initialSilent;
+
+  @override
+  ConsumerState<_AutoStartForm> createState() => _AutoStartFormState();
+}
+
+class _AutoStartFormState extends ConsumerState<_AutoStartForm> {
+  late bool _auto;
+  late bool _silent;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _auto = widget.initialAuto;
+    _silent = widget.initialSilent;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutoStartForm old) {
+    super.didUpdateWidget(old);
+    // External resets (file rewritten by another process) sync into
+    // the local UI only when nothing is in flight.
+    if (old.initialAuto != widget.initialAuto) _auto = widget.initialAuto;
+    if (old.initialSilent != widget.initialSilent) _silent = widget.initialSilent;
+  }
+
+  Future<void> _setAuto(bool v) async {
+    setState(() {
+      _auto = v;
+      _error = null;
+    });
+    await _apply();
+  }
+
+  Future<void> _setSilent(bool v) async {
+    setState(() {
+      _silent = v;
+      _error = null;
+    });
+    await _apply();
+  }
+
+  Future<void> _apply() async {
+    try {
+      await ref.read(downloadSettingsProvider.notifier).apply(
+            autoStart: _auto,
+            silentStart: _silent,
+          );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(l.settingAutoStart),
+          subtitle: Text(
+            l.settingAutoStartHint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          value: _auto,
+          onChanged: _setAuto,
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(l.settingSilentStart),
+          subtitle: Text(
+            l.settingSilentStartHint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          value: _silent && _auto,
+          // The switch is "on" only when both auto and silent are on;
+          // tapping it always flips silent, and the disabled state
+          // (autoStart off) makes the relationship visible.
+          onChanged: _auto ? _setSilent : null,
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              _error!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1035,4 +1216,38 @@ class _SkeletonRow extends StatelessWidget {
           child: LinearProgressIndicator(),
         ),
       );
+}
+
+/// "Start hidden in tray" — applies to manual launches. The
+/// auto-launched copy is controlled by [settingSilentStart] (sibling
+/// in [DownloadSettings]); this tile is the opt-out for "show me the
+/// window when I double-click the exe". Default: ON.
+class _StartHiddenToTrayTile extends ConsumerWidget {
+  const _StartHiddenToTrayTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final settings = ref.watch(downloadSettingsProvider);
+    return settings.when(
+      data: (s) => SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(l.settingStartHiddenToTray),
+        subtitle: Text(
+          l.settingStartHiddenToTrayHint,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        value: s.startHiddenToTray,
+        onChanged: (v) async {
+          try {
+            await ref
+                .read(downloadSettingsProvider.notifier)
+                .apply(startHiddenToTray: v);
+          } catch (_) {}
+        },
+      ),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
 }

@@ -760,7 +760,9 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
         case SortColumn.size:
           return a.totalLength.compareTo(b.totalLength);
         case SortColumn.added:
-          return a.gid.compareTo(b.gid);
+          // Sort by the wall-clock the Added column displays — NOT by
+          // the gid string (hex gids produce effectively random order).
+          return _compareAddedTime(a, b);
       }
     }
 
@@ -769,6 +771,17 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
       return s.ascending ? r : -r;
     });
     return list;
+  }
+
+  /// Compare two tasks by their displayed add time. Missing timestamps
+  /// sort to the end (never crash, always deterministic).
+  int _compareAddedTime(TaskSummary a, TaskSummary b) {
+    final ta = a.addedAt ?? a.completedAt;
+    final tb = b.addedAt ?? b.completedAt;
+    if (ta == null && tb == null) return a.gid.compareTo(b.gid);
+    if (ta == null) return 1;
+    if (tb == null) return -1;
+    return ta.compareTo(tb);
   }
 
   List<TaskSummary> _applyFilter(

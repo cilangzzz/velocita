@@ -209,6 +209,31 @@ void main() {
       expect(s.maxConnectionPerServer, 5);
     });
 
+    test('autoStart + silentStart round-trip through JSON', () {
+      const s = DownloadSettings(
+        saveDir: '/tmp',
+        maxConcurrentDownloads: 5,
+        maxOverallDownloadLimitBytesPerSec: 0,
+        autoStart: true,
+        silentStart: true,
+      );
+      final back = DownloadSettings.fromJson(s.toJson());
+      expect(back.autoStart, isTrue);
+      expect(back.silentStart, isTrue);
+    });
+
+    test('legacy settings.json without autoStart defaults to false', () {
+      // Old files written before the autostart feature must not start
+      // the app at sign-in just because the field is absent.
+      final s = DownloadSettings.fromJson({
+        'saveDir': '/tmp',
+        'maxConcurrentDownloads': 5,
+        'maxOverallDownloadLimitBytesPerSec': 0,
+      });
+      expect(s.autoStart, isFalse);
+      expect(s.silentStart, isFalse);
+    });
+
     test('no patch when nothing changed', () {
       expect(buildGlobalOptionPatches(base, base), isEmpty);
     });

@@ -1,8 +1,8 @@
 // ignore_for_file: use_build_context_synchronously
 // All `BuildContext` instances we use are obtained via
 // `widget.navigatorKey.currentContext`, which is a `GlobalKey<NavigatorState>`.
-// The async-gap check is therefore a false positive — a global key's
-// context is not bound to a widget's lifecycle. We re-`mounted`-check
+// The async-gap check is therefore a false positive — a global key
+// context is not bound to a widget lifecycle. We re-`mounted`-check
 // around the showDialog call as a belt-and-suspenders guard.
 import 'dart:async';
 import 'dart:collection';
@@ -14,6 +14,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../downloads/downloads.dart';
 import '../data/browser_integration_settings_provider.dart';
 import '../data/pending_add_requests_provider.dart';
+import '../data/window_bridge.dart';
 import '../domain/add_request.dart';
 import '../domain/browser_integration_settings.dart';
 
@@ -39,13 +40,11 @@ class _PendingAddRequestListenerState
   bool _busy = false;
   StreamSubscription<AddRequest>? _sub;
   ProviderSubscription<AsyncValue<AddRequest>>? _providerSub;
+  StreamSubscription<AddTaskResult>? _resultSub;
 
   @override
   void initState() {
     super.initState();
-    // We use a provider subscription instead of `.stream` so we get
-    // AsyncValue semantics (loading/error) and the deprecation warning
-    // goes away.
     _providerSub = ref.listenManual<AsyncValue<AddRequest>>(
       pendingAddRequestsProvider,
       (_, next) {
@@ -53,12 +52,14 @@ class _PendingAddRequestListenerState
       },
       fireImmediately: true,
     );
+    _resultSub = onSubWindowAddTaskResult.listen(_onSubWindowResult);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     _providerSub?.close();
+    _resultSub?.cancel();
     super.dispose();
   }
 
@@ -73,12 +74,8 @@ class _PendingAddRequestListenerState
   }
 
   bool _isRecentDuplicate(AddRequest r) {
-    // Fingerprint = (source, url). We don't have a `dedupKey` on the
-    // wire in v1, so this is the next-best thing — it collapses
-    // double-clicks of the toolbar icon on the same link.
     final key = '${r.source.name}|${r.url}';
     final now = DateTime.now();
-    // Garbage-collect stale entries.
     _recentlySeen.removeWhere(
       (_, t) => now.difference(t) > AddRequest.dedupWindow,
     );
@@ -107,37 +104,33 @@ class _PendingAddRequestListenerState
     final settings = ref.read(browserIntegrationSettingsProvider).value ??
         const BrowserIntegrationSettings();
     if (settings.showConfirmationPopup) {
-      await _showConfirmDialog(r);
+      await _spawnSubWindow(r);
     } else {
       await _autoAdd(r);
     }
   }
 
-  Future<void> _showConfirmDialog(AddRequest r) async {
-    // If the window is hidden (the user closed it earlier but the
-    // process is still alive in the tray, serving browser deep
-    // links), bring it forward. The dialog can be scheduled into
-    // a hidden window but the user can't see it, so we MUST show +
-    // focus first.
-    final ctx = widget.navigatorKey.currentContext;
-    if (ctx == null) return;
-    await _ensureWindowVisible();
+  /// Spawn an Add-Task sub-window. The sub-window is its own OS
+  /// window (independent Flutter engine) — the main app's content
+  /// stays in the tray. The sub-window IPCs the result back via
+  /// `addTaskResultHandler`, which the listener has subscribed to
+  /// in [initState] and dispatches to [_onSubWindowResult].
+  ///
+  /// Note: deliberately does NOT call `_ensureWindowVisible()` — the
+  /// whole point of the sub-window is that the main app stays in
+  /// the tray.
+  Future<void> _spawnSubWindow(AddRequest r) async {
     if (!mounted) return;
-    // `ctx` is a global navigator key's currentContext, not a widget
-    // BuildContext; the async gap (`_ensureWindowVisible()`) does
-    // not invalidate it, and `mounted` was rechecked above.
-    final result = await showDialog<SubmitResult>(
-      context: ctx,
-      // No modal scrim — the dialog floats alone over the Velocita
-      // window; the rest of the app stays visible (and clickable to
-      // dismiss: barrierDismissible=true with a transparent barrier
-      // still eats the click).
-      barrierColor: Colors.transparent,
-      barrierDismissible: true,
-      builder: (_) => AddTaskDialog(initialUrl: r.url),
+    await spawnAddTaskSubWindow(r);
+  }
+
+  Future<void> _onSubWindowResult(AddTaskResult result) async {
+    await ipcLog(
+      '_onSubWindowResult: cancelled=${result.cancelled} '
+      'submit=${result.submit != null}',
     );
-    if (result == null) return; // user dismissed
-    await _applyResult(result);
+    if (result.cancelled || result.submit == null) return;
+    await _applyResult(result.submit!);
   }
 
   Future<void> _autoAdd(AddRequest r) async {
@@ -152,52 +145,49 @@ class _PendingAddRequestListenerState
           );
     } catch (e) {
       _showSnack('Failed to add: $e');
+      await _restoreZOrder();
       return;
     }
     _showSnack('Added: ${r.url}');
+    await _restoreZOrder();
   }
 
   Future<void> _ensureWindowVisible() async {
     try {
       await windowManager.show();
       await windowManager.focus();
-      // Windows refuses `SetForegroundWindow` when the calling code
-      // wasn't triggered by a user action (NM messages and deep links
-      // don't count). The reliable workaround is a brief
-      // `setAlwaysOnTop(true)` flash that forces the window above
-      // others at the OS level; we restore the previous state ~120 ms
-      // later. The flash is too short for the user to perceive, but
-      // enough to make the dialog actually visible.
       await windowManager.setAlwaysOnTop(true);
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+    } catch (_) {}
+  }
+
+  Future<void> _restoreZOrder() async {
+    try {
       await windowManager.setAlwaysOnTop(false);
-    } catch (_) {
-      // Window manager isn't always available (tests, hot reload).
-      // Silently no-op; the dialog can still be scheduled.
-    }
+    } catch (_) {}
   }
 
   Future<void> _applyResult(SubmitResult r) async {
+    await ipcLog(
+      '_applyResult: kind=${r.kind.name} url=${r.url} '
+      'magnet=${r.magnet} saveDir=${r.saveDir}',
+    );
     final notifier = ref.read(taskListProvider.notifier);
-    switch (r.kind) {
-      case SubmitKind.url:
-        await notifier.addUri(r.url!, saveDir: r.saveDir);
-      case SubmitKind.magnet:
-        await notifier.addMagnet(r.magnet!, saveDir: r.saveDir);
-      case SubmitKind.torrent:
-        await notifier.addTorrent(r.torrentBytes!, saveDir: r.saveDir);
+    try {
+      switch (r.kind) {
+        case SubmitKind.url:
+          await notifier.addUri(r.url!, saveDir: r.saveDir);
+        case SubmitKind.magnet:
+          await notifier.addMagnet(r.magnet!, saveDir: r.saveDir);
+        case SubmitKind.torrent:
+          await notifier.addTorrent(r.torrentBytes!, saveDir: r.saveDir);
+      }
+      await ipcLog('_applyResult: added OK');
+    } catch (e, st) {
+      await ipcLog('_applyResult: FAILED $e\n$st');
+      rethrow;
     }
   }
 
-  /// Translate an [AddRequest] (extension-side wire shape) into the
-  /// aria2 options map expected by `Aria2RpcClient.addUri`:
-  ///   * `referer` — only when the request carried a non-empty referer.
-  ///   * `header` — array form so multiple overrides stack cleanly.
-  ///     Cookie comes first (folded from [AddRequest.cookieHeader]),
-  ///     followed by any explicit [AddRequest.requestHeaders].
-  ///
-  /// Returns `null` when no overrides are needed — the caller can detect
-  /// that and skip merging.
   Map<String, Object?>? _toAria2Options(AddRequest r) {
     final m = <String, Object?>{};
     if (r.referer != null && r.referer!.isNotEmpty) {

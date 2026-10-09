@@ -17,6 +17,9 @@ class DownloadSettings {
     this.proxyBypass = '',
     this.split = defaultSplit,
     this.maxConnectionPerServer = defaultMaxConnPerServer,
+    this.autoStart = false,
+    this.silentStart = false,
+    this.startHiddenToTray = true,
   });
 
   /// Default save directory. Maps to aria2's `dir` global option.
@@ -69,6 +72,25 @@ class DownloadSettings {
   /// be at least as large as [split] to get the full split count.
   final int maxConnectionPerServer;
 
+  /// Whether to launch Velocita when the user signs in. Backed by
+  /// the HKCU\...\Run\Velocita registry value (Windows only; a no-op
+  /// elsewhere).
+  final bool autoStart;
+
+  /// Whether the auto-launched copy should start hidden in the tray
+  /// instead of revealing the main window. Only takes effect when
+  /// [autoStart] is also true. Honoured at process start by
+  /// `main.dart` via the `--start-minimized` flag.
+  final bool silentStart;
+
+  /// When `true` (the default), a manual launch starts the app
+  /// hidden in the tray only — no main window is shown until the
+  /// user clicks the tray icon. The auto-launched copy uses
+  /// [silentStart] from the registry (and ignores this flag) so
+  /// silent logins and normal launches are controlled
+  /// independently.
+  final bool startHiddenToTray;
+
   /// Speed limit in KiB/s (UI-friendly unit). `null` means unlimited.
   int? get maxOverallDownloadLimitKBps =>
       maxOverallDownloadLimitBytesPerSec <= 0
@@ -92,6 +114,9 @@ class DownloadSettings {
     String? proxyBypass,
     int? split,
     int? maxConnectionPerServer,
+    bool? autoStart,
+    bool? silentStart,
+    bool? startHiddenToTray,
   }) {
     return DownloadSettings(
       saveDir: saveDir ?? this.saveDir,
@@ -109,6 +134,9 @@ class DownloadSettings {
       split: split ?? this.split,
       maxConnectionPerServer:
           maxConnectionPerServer ?? this.maxConnectionPerServer,
+      autoStart: autoStart ?? this.autoStart,
+      silentStart: silentStart ?? this.silentStart,
+      startHiddenToTray: startHiddenToTray ?? this.startHiddenToTray,
     );
   }
 
@@ -126,6 +154,9 @@ class DownloadSettings {
         'proxyBypass': proxyBypass,
         'split': split,
         'maxConnectionPerServer': maxConnectionPerServer,
+        'autoStart': autoStart,
+        'silentStart': silentStart,
+        'startHiddenToTray': startHiddenToTray,
       };
 
   static DownloadSettings fromJson(Map<String, Object?> raw) {
@@ -144,6 +175,9 @@ class DownloadSettings {
       split: (raw['split'] as int?) ?? defaultSplit,
       maxConnectionPerServer:
           (raw['maxConnectionPerServer'] as int?) ?? defaultMaxConnPerServer,
+      autoStart: (raw['autoStart'] as bool?) ?? false,
+      silentStart: (raw['silentStart'] as bool?) ?? false,
+      startHiddenToTray: (raw['startHiddenToTray'] as bool?) ?? true,
     );
   }
 

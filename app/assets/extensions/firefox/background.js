@@ -73,9 +73,10 @@ const FILENAME_WAIT_MS = 30 * 1000;     // 30 s
 // Default settings stored under SETTINGS_KEY when the extension first
 // installs.
 const DEFAULT_SETTINGS = Object.freeze({
-  enabled: true,                    // master intercept switch
+  enabled: true,                    // master intercept switch ("pause all")
   minFileSizeMB: 0,                 // 0 = no minimum
   blacklist: [],                    // string substrings; matched against URL
+  pausedSites: [],                  // hostnames to skip ("pause this site")
   showContextMenu: true,
 });
 
@@ -102,6 +103,46 @@ function ensureInitialized() {
     setInterval(flushSniffMap, SNIFF_FLUSH_MS);
   })();
   return initPromise;
+}
+
+async function ensureContextMenus() {
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (_) {
+    settings = { ...DEFAULT_SETTINGS };
+  }
+  if (!settings.showContextMenu) return;
+  // Each create call is idempotent by id. `chrome.contextMenus.removeAll`
+  // would also work but races with a same-tick user right-click; the
+  // upsert-by-id approach is safer.
+  await api.contextMenus.create({
+    id: "velocita-download-link",
+    title: "Download with Velocita",
+    contexts: ["link"],
+  });
+  await api.contextMenus.create({
+    id: "velocita-download-page",
+    title: "Download this page with Velocita",
+    contexts: ["page", "selection"],
+  });
+  // `image` shows the menu on right-click of <img>, <picture><source>,
+  // and elements with CSS `background-image` (the latter also exposes
+  // `info.srcUrl`). On Firefox the background-image case isn't supported
+  // but plain <img> works.
+  await api.contextMenus.create({
+    id: "velocita-download-image",
+    title: "Download this image with Velocita",
+    contexts: ["image"],
+  });
+  // "video" context is Chrome/Edge only — Firefox silently no-ops.
+  try {
+    await api.contextMenus.create({
+      id: "velocita-download-video",
+      title: "Download this video",
+      contexts: ["video"],
+    });
+  } catch (_) {}
 }
 
 async function getSettings() {
@@ -252,16 +293,29 @@ async function sendToHost(payload) {
   const h2 = await sendViaHttp(payload);
   if (h2.ok) return h2;
 
-  // 4) Give up WITHOUT opening a `velocita://add?url=…` tab. Opening a
-  //    custom-scheme URL makes Chrome show an external-protocol
-  //    confirmation prompt ("This site is trying to open Velocita"),
-  //    which IDM / FDM-style extensions deliberately avoid. The caller
-  //    surfaces an in-extension error instead (button red-flash, popup
-  //    status line).
+  // 4) Last-resort fallback: open `velocita://add?url=…` in a new tab so
+  //    the OS can launch Velocita (registered as a URL-scheme handler).
+  //    This path triggers Chrome's external-protocol confirmation prompt
+  //    ("This site is trying to open Velocita") — only reached when both
+  //    NM and loopback HTTP failed, which means Velocita was not running
+  //    AND the host JSON's allowed_origins didn't list this extension (so
+  //    NM couldn't wake it either). Keeping this path as a backstop means
+  //    a fresh-install user (no self-registration yet) still gets their
+  //    download queued.
+  const u = new URL("velocita://add");
+  u.searchParams.set("url", payload.url);
+  if (payload.referer) u.searchParams.set("referer", payload.referer);
+  if (payload.tabTitle) u.searchParams.set("tabTitle", payload.tabTitle);
+  if (payload.dedupKey) u.searchParams.set("dedupKey", payload.dedupKey);
+  try {
+    await api.tabs.create({ url: u.toString() });
+  } catch (e2) {
+    console.error("Velocita extension: fallback velocita:// failed", e2);
+  }
   return {
     ok: false,
-    via: "none",
-    error: "Velocita is not running or the browser integration is disabled",
+    via: "fallback",
+    error: "Velocita is not running — opened wake-up tab",
   };
 }
 
@@ -291,6 +345,14 @@ async function pingHost() {
 // they're not network resources we can replay through the host.
 const UNINTERCEPTABLE = /^(about:|blob:|data:|javascript:|file:)/i;
 
+function hostOf(u) {
+  try {
+    return new URL(u).hostname || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function shouldIntercept(item, settings) {
   if (!item || !item.url) return false;
   if (UNINTERCEPTABLE.test(item.url)) return false;
@@ -300,8 +362,13 @@ function shouldIntercept(item, settings) {
   // to the extension's localized name; we match against ours.
   const myName = api.i18n?.getMessage("extensionName") || "";
   if (myName && item.byExtensionName === myName) return true;
-  // Master switch.
+  // Master switch ("pause all sites").
   if (!settings.enabled) return false;
+  // Per-site pause list ("pause this site").
+  if (settings.pausedSites && settings.pausedSites.length) {
+    const host = hostOf(item.url);
+    if (host && settings.pausedSites.includes(host)) return false;
+  }
   // File size filter (only if Chrome knows the size).
   const minBytes = (settings.minFileSizeMB || 0) * 1024 * 1024;
   if (minBytes > 0 && item.fileSize > 0 && item.fileSize < minBytes) {
@@ -420,11 +487,27 @@ async function handleIntercept(item) {
 // ── context-menu wiring ────────────────────────────────────────────────
 
 async function handleContextMenuClick(info) {
+  // Bail when globally paused or the target site is paused.
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (_) {
+    return;
+  }
+  if (!settings.enabled) return;
+  if (settings.pausedSites && settings.pausedSites.length) {
+    const pageHost = info.pageUrl ? hostOf(info.pageUrl) : null;
+    const srcHost = info.srcUrl ? hostOf(info.srcUrl) : null;
+    if (pageHost && settings.pausedSites.includes(pageHost)) return;
+    if (srcHost && settings.pausedSites.includes(srcHost)) return;
+  }
   let url = null;
   if (info.menuItemId === "velocita-download-link" && info.linkUrl) {
     url = info.linkUrl;
   } else if (info.menuItemId === "velocita-download-page" && info.pageUrl) {
     url = info.pageUrl;
+  } else if (info.menuItemId === "velocita-download-image" && info.srcUrl) {
+    url = info.srcUrl;
   } else if (info.menuItemId === "velocita-download-video" && info.srcUrl) {
     url = info.srcUrl;
   }
@@ -562,6 +645,29 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+  if (message.type === "velocita/toggleSitePause") {
+    // payload: { host: "example.com" } — toggle that hostname in
+    // `pausedSites`. Empty / missing host just returns the current list.
+    (async () => {
+      const cur = await getSettings();
+      const host = (message.payload && message.payload.host) || null;
+      const list = Array.isArray(cur.pausedSites)
+        ? [...cur.pausedSites]
+        : [];
+      const idx = host ? list.indexOf(host) : -1;
+      let paused = false;
+      if (idx >= 0) {
+        list.splice(idx, 1); // resume
+      } else if (host) {
+        list.push(host); // pause
+        paused = true;
+      }
+      const next = { ...cur, pausedSites: list };
+      await api.storage.local.set({ [SETTINGS_KEY]: next });
+      sendResponse({ ok: true, host, paused, pausedSites: list });
+    })();
+    return true;
+  }
 
   // Content scripts → SW
   if (message.type === "velocita/injectSniffer") {
@@ -595,31 +701,11 @@ api.runtime.onInstalled.addListener(async () => {
     // works immediately (the host JSON's allowed_origins starts with a
     // placeholder that no real ID matches).
     registerWithApp();
-    const settings = await getSettings();
-    if (settings.showContextMenu) {
-      // Context menu creation is best-effort; an old install may have
-      // stale entries we can't replace. Catch and ignore.
-      await api.contextMenus.create({
-        id: "velocita-download-link",
-        title: "Download with Velocita",
-        contexts: ["link"],
-      });
-      await api.contextMenus.create({
-        id: "velocita-download-page",
-        title: "Download this page with Velocita",
-        contexts: ["page", "selection"],
-      });
-      // "video" context is Chrome/Edge only — Firefox silently no-ops.
-      try {
-        await api.contextMenus.create({
-          id: "velocita-download-video",
-          title: "Download this video",
-          contexts: ["video"],
-        });
-      } catch (_) {}
-    }
+    // Context-menu creation moved into ensureInitialized() so it also
+    // runs on subsequent SW wakes that skip this listener (e.g. clicking
+    // the reload button at chrome://extensions during dev).
   } catch (e) {
-    console.error("Velocita extension: context menu setup failed", e);
+    console.error("Velocita extension: onInstalled failed", e);
   }
 });
 
@@ -642,3 +728,15 @@ if (typeof api.downloads.setShelfEnabled === "function") {
     api.downloads.setShelfEnabled?.(false).catch(() => {});
   });
 }
+
+// ── kick off on every SW start ───────────────────────────────────────
+// ensureInitialized() restores persisted state (sniff map, settings) and
+// starts the periodic flush; ensureContextMenus() rebuilds the right-click
+// entries even after a reload that skips `onInstalled` (the common dev
+// workflow). NOTE: ensureContextMenus must NOT be awaited from inside
+// ensureInitialized — it reads settings via getSettings() which awaits
+// ensureInitialized(), and awaiting your own in-flight initPromise from
+// inside it is a deadlock (the SW would hang forever and no menus /
+// handlers would ever run).
+ensureInitialized();
+ensureContextMenus();

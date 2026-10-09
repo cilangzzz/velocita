@@ -9,7 +9,7 @@
         font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
         margin: 0;
         padding: 12px 14px;
-        width: 260px;
+        width: 280px;
       }
       h1 {
         font-size: 14px;
@@ -39,8 +39,16 @@
       button:disabled {
         background: #8885; cursor: not-allowed;
       }
+      button.secondary {
+        background: transparent;
+        border-color: #8885;
+        color: #1f6feb;
+      }
+      button.secondary.danger { color: #c43c3c; }
+      button.secondary:disabled { color: #888; }
       a { color: #1f6feb; text-decoration: none; font-size: 12px; }
       #status { font-size: 11px; color: #888; }
+      #pause-site, #pause-all { margin-top: 2px; }
     </style>
   </head>
   <body>
@@ -50,6 +58,8 @@
     </h1>
     <div id="status">checking…</div>
     <button id="dl-page">Download current page</button>
+    <button id="pause-site" class="secondary">Pause this site</button>
+    <button id="pause-all" class="secondary">Pause all sites</button>
     <a href="#" id="options">Settings</a>
 
     <script src="popup.js"></script>

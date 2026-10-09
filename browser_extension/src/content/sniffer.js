@@ -68,6 +68,7 @@
     const _fetch = window.fetch;
     if (typeof _fetch === "function") {
       window.fetch = function (input, init) {
+        let p;
         try {
           let url = null;
           let accept = null;
@@ -83,7 +84,17 @@
           }
           if (url && looksMedia(url, accept)) post(url, guessMime(url));
         } catch (_) {}
-        return _fetch.apply(this, arguments);
+        p = _fetch.apply(this, arguments);
+        // Swallow the page's unhandled-rejection console noise WITHOUT
+        // changing the promise the page receives. Attaching a no-op catch
+        // marks the rejection as handled at the engine level, while the
+        // page still gets the SAME promise object to .then/.catch on.
+        // Without this, every page fetch the page itself leaves unhandled
+        // (e.g. a blocked request) surfaces as
+        //   Uncaught (in promise) TypeError: Failed to fetch
+        // attributed to this injected sniffer.
+        if (p && typeof p.catch === "function") p.catch(() => {});
+        return p;
       };
     }
   } catch (_) {}

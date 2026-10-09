@@ -26,6 +26,8 @@ class AppLocalizations {
   // ── Catalog ──────────────────────────────────────────────
   String get appTitle => _t(_catalog['appTitle']!);
   String get downloadsTab => _t(_catalog['downloadsTab']!);
+  String get settingStartHiddenToTray => _t(_catalog['settingStartHiddenToTray']!);
+  String get settingStartHiddenToTrayHint => _t(_catalog['settingStartHiddenToTrayHint']!);
   String get addTask => _t(_catalog['addTask']!);
   String get pauseTask => _t(_catalog['pauseTask']!);
   String get resumeTask => _t(_catalog['resumeTask']!);
@@ -85,6 +87,8 @@ class AppLocalizations {
   String get general => _t(_catalog['general']!);
   String get downloads => _t(_catalog['downloads']!);
   String get connection => _t(_catalog['connection']!);
+  String get startup => _t(_catalog['startup']!);
+  String get advanced => _t(_catalog['advanced']!);
   String get schedulerOffPeak => _t(_catalog['schedulerOffPeak']!);
   String get schedulerPeak => _t(_catalog['schedulerPeak']!);
   String get schedulerAdd => _t(_catalog['schedulerAdd']!);
@@ -145,6 +149,12 @@ class AppLocalizations {
       _t(_catalog['settingMaxConnPerServer']!);
   String get settingMaxConnPerServerHint =>
       _t(_catalog['settingMaxConnPerServerHint']!);
+  String get settingAutoStart => _t(_catalog['settingAutoStart']!);
+  String get settingAutoStartHint =>
+      _t(_catalog['settingAutoStartHint']!);
+  String get settingSilentStart => _t(_catalog['settingSilentStart']!);
+  String get settingSilentStartHint =>
+      _t(_catalog['settingSilentStartHint']!);
   String get newCategory => _t(_catalog['newCategory']!);
   String get newChildCategory => _t(_catalog['newChildCategory']!);
   String get renameCategory => _t(_catalog['renameCategory']!);
@@ -249,6 +259,8 @@ const Map<String, Map<String, String>> _strings = {
   'en': {
     'appTitle': 'Velocita',
     'downloadsTab': 'Downloads',
+    'settingStartHiddenToTray': 'Start hidden in tray',
+    'settingStartHiddenToTrayHint': 'Velocita launches to the system tray only; click the tray icon to show the main window.',
     'addTask': 'Add Task',
     'pauseTask': 'Pause',
     'resumeTask': 'Resume',
@@ -308,6 +320,8 @@ const Map<String, Map<String, String>> _strings = {
     'general': 'General',
     'downloads': 'Downloads',
     'connection': 'Connection',
+    'startup': 'Startup',
+    'advanced': 'Advanced',
     'schedulerOffPeak': 'Off-Peak Window',
     'schedulerPeak': 'Peak Window',
     'schedulerAdd': 'Add Window',
@@ -360,6 +374,12 @@ const Map<String, Map<String, String>> _strings = {
     'settingMaxConnPerServer': 'Max connections per server',
     'settingMaxConnPerServerHint':
         'Cap on concurrent connections to the same server',
+    'settingAutoStart': 'Start Velocita at sign-in',
+    'settingAutoStartHint':
+        'Launch Velocita automatically when you log in to Windows',
+    'settingSilentStart': 'Start minimized to tray',
+    'settingSilentStartHint':
+        'When launched automatically, start hidden in the tray instead of opening a window',
     'newCategory': 'New category',
     'newChildCategory': 'New sub-category',
     'renameCategory': 'Rename',
@@ -445,6 +465,8 @@ const Map<String, Map<String, String>> _strings = {
   'zh-CN': {
     'appTitle': 'Velocita',
     'downloadsTab': '下载',
+    'settingStartHiddenToTray': '启动时最小化到托盘',
+    'settingStartHiddenToTrayHint': '启动后只显示托盘图标，不显示主窗口；点击托盘图标再显示主窗口。',
     'addTask': '添加下载任务',
     'pauseTask': '暂停',
     'resumeTask': '继续',
@@ -502,6 +524,8 @@ const Map<String, Map<String, String>> _strings = {
     'general': '常规',
     'downloads': '下载',
     'connection': '连接',
+    'startup': '启动',
+    'advanced': '高级',
     'schedulerOffPeak': '低峰时段',
     'schedulerPeak': '高峰时段',
     'schedulerAdd': '添加时段',
@@ -549,6 +573,10 @@ const Map<String, Map<String, String>> _strings = {
     'settingSplitAppliesToNew': '仅对新建下载生效，已在跑的任务不会重新分块',
     'settingMaxConnPerServer': '每服务器最大连接数',
     'settingMaxConnPerServerHint': '对同一服务器的最大并发连接数上限',
+    'settingAutoStart': '开机自启',
+    'settingAutoStartHint': '登录 Windows 时自动启动 Velocita',
+    'settingSilentStart': '静默启动',
+    'settingSilentStartHint': '自动启动时隐藏到托盘，不弹出主窗口',
     'newCategory': '新建分类',
     'newChildCategory': '新建子分类',
     'renameCategory': '重命名',
@@ -621,6 +649,8 @@ const Map<String, Map<String, String>> _strings = {
 const Map<String, String> _catalog = {
   'appTitle': 'appTitle',
   'downloadsTab': 'downloadsTab',
+  'settingStartHiddenToTray': 'settingStartHiddenToTray',
+  'settingStartHiddenToTrayHint': 'settingStartHiddenToTrayHint',
   'addTask': 'addTask',
   'pauseTask': 'pauseTask',
   'resumeTask': 'resumeTask',
@@ -678,6 +708,8 @@ const Map<String, String> _catalog = {
   'general': 'general',
   'downloads': 'downloads',
   'connection': 'connection',
+  'startup': 'startup',
+  'advanced': 'advanced',
   'schedulerOffPeak': 'schedulerOffPeak',
   'schedulerPeak': 'schedulerPeak',
   'schedulerAdd': 'schedulerAdd',
@@ -724,6 +756,10 @@ const Map<String, String> _catalog = {
   'settingSplitAppliesToNew': 'settingSplitAppliesToNew',
   'settingMaxConnPerServer': 'settingMaxConnPerServer',
   'settingMaxConnPerServerHint': 'settingMaxConnPerServerHint',
+  'settingAutoStart': 'settingAutoStart',
+  'settingAutoStartHint': 'settingAutoStartHint',
+  'settingSilentStart': 'settingSilentStart',
+  'settingSilentStartHint': 'settingSilentStartHint',
   'newCategory': 'newCategory',
   'newChildCategory': 'newChildCategory',
   'renameCategory': 'renameCategory',

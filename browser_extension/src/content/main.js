@@ -22,6 +22,18 @@ const SEEN = new WeakSet();           // HTMLMediaElement we've already wrapped
 const BUTTONS = new WeakMap();       // HTMLMediaElement -> HTMLButtonElement
 const HOVER_TIMER = new WeakMap();   // HTMLButtonElement -> { hideAt, armed }
 
+// Pause state (global "pause all" + per-site "pause this site"). Read
+// from chrome.storage.local; kept in sync via storage.onChanged so toggles
+// in the popup take effect on already-open pages immediately.
+let gPaused = false;
+
+function computePaused(velocita) {
+  return !velocita ||
+    velocita.enabled === false ||
+    (Array.isArray(velocita.pausedSites) &&
+      velocita.pausedSites.includes(location.hostname));
+}
+
 function isMedia(n) {
   return n && (n.tagName === "VIDEO" || n.tagName === "AUDIO");
 }
@@ -115,6 +127,10 @@ function removeButton(media) {
 function reposition(media) {
   const btn = BUTTONS.get(media);
   if (!btn) return;
+  if (gPaused) {
+    btn.style.display = "none";
+    return;
+  }
   const r = media.getBoundingClientRect();
   // Off-screen or tiny — hide.
   const inView = r.width >= 80 && r.height >= 60 &&
@@ -140,6 +156,7 @@ window.addEventListener("message", (ev) => {
   if (ev.source !== window) return;
   const d = ev.data;
   if (!d || d.kind !== "velocita/sniff" || typeof d.url !== "string") return;
+  if (gPaused) return;
   api.runtime.sendMessage({
     type: "velocita/store",
     payload: { url: d.url, mime: d.mime || null, ts: d.ts || Date.now() },
@@ -156,6 +173,7 @@ function flashError(btn) {
 }
 
 function onDownloadClick(media) {
+  if (gPaused) return;
   const btn = BUTTONS.get(media);
   const src = (media.currentSrc || media.src || null);
   api.runtime.sendMessage(
@@ -216,6 +234,24 @@ document.addEventListener("webkitfullscreenchange", repositionAll);
 // ── tell the SW to inject the MAIN-world sniffer ───────────────────
 
 api.runtime.sendMessage({ type: "velocita/injectSniffer" }).catch(() => {});
+
+// ── pause-state live sync ──────────────────────────────────────────
+// Initial read + storage.onChanged keep the floating button and sniff
+// bridge in sync with "pause all" / "pause this site" toggles from the
+// popup, on every already-open page.
+function applyPaused(velocita) {
+  gPaused = computePaused(velocita);
+  repositionAll();
+}
+api.storage.local
+  .get("velocita")
+  .then((s) => applyPaused(s && s.velocita))
+  .catch(() => {});
+api.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.velocita) {
+    applyPaused(changes.velocita.newValue);
+  }
+});
 
 // Console marker — useful when manually debugging the SW.
 console.info("[velocita] content script installed");

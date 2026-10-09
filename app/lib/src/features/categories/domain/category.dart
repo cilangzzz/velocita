@@ -103,6 +103,12 @@ class Category {
             '.flv',
             '.wmv',
             '.m4v',
+            // HLS / DASH playlists — a `.m3u8` URL should route into
+            // Videos, not the catch-all.
+            '.m3u8',
+            '.m3u',
+            '.mpd',
+            '.ts',
           ],
           iconName: 'video',
           isDefault: true,

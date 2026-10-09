@@ -36,6 +36,13 @@ export 'data/browser_integration_settings_provider.dart'
         BrowserIntegrationSettingsNotifier;
 export 'data/pending_add_requests_provider.dart'
     show pendingAddRequestsProvider;
+export 'data/window_bridge.dart'
+    show
+        AddTaskPayload,
+        AddTaskResult,
+        spawnAddTaskSubWindow,
+        addTaskResultHandler,
+        onSubWindowAddTaskResult;
 export 'presentation/pending_add_request_listener.dart'
     show PendingAddRequestListener;
 export 'presentation/browser_integration_section.dart'

@@ -25,13 +25,29 @@ import '../data/downloads_repository.dart';
 /// selects the URL tab. Used by the browser-extension integration to
 /// hand a URL over to the user for confirmation.
 class AddTaskDialog extends ConsumerStatefulWidget {
-  const AddTaskDialog({super.key, this.categoryId, this.initialUrl});
+  const AddTaskDialog({
+    super.key,
+    this.categoryId,
+    this.initialUrl,
+    this.onResult,
+  });
 
   /// Optional id of the currently selected sidebar category.
   final String? categoryId;
 
   /// Optional pre-filled URL (M6 browser-integration surface).
   final String? initialUrl;
+
+  /// Optional hook fired when the user confirms the dialog. Runs
+  /// before the dialog pops, with the same `SubmitResult` that
+  /// `Navigator.pop` will use as its return value.
+  ///
+  /// Used by the Add-Task sub-window: it has no `Navigator.pop`
+  /// caller to receive the result (the dialog is the root of the
+  /// sub-window's tree), so the sub-window supplies this callback
+  /// to receive the result and IPC it back to the main app. The
+  /// main-app `showDialog` path ignores this callback.
+  final void Function(SubmitResult)? onResult;
 
   @override
   ConsumerState<AddTaskDialog> createState() => _AddTaskDialogState();
@@ -222,29 +238,36 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
 
   void _submit() {
     final dir = _customSaveDir ?? _saveDirPreview;
+    final void Function(SubmitResult)? onResult = widget.onResult;
     switch (_tabController.index) {
       case 0:
         if (!_urlFormKey.currentState!.validate()) return;
-        Navigator.of(context).pop(SubmitResult(
+        final r = SubmitResult(
           kind: SubmitKind.url,
           url: _urlController.text.trim(),
           saveDir: dir,
-        ));
+        );
+        if (onResult != null) onResult(r);
+        Navigator.of(context).pop(r);
       case 1:
         if (!_magnetFormKey.currentState!.validate()) return;
-        Navigator.of(context).pop(SubmitResult(
+        final r = SubmitResult(
           kind: SubmitKind.magnet,
           magnet: _magnetController.text.trim(),
           saveDir: dir,
-        ));
+        );
+        if (onResult != null) onResult(r);
+        Navigator.of(context).pop(r);
       case 2:
         if (_torrentBytes == null) return;
-        Navigator.of(context).pop(SubmitResult(
+        final r = SubmitResult(
           kind: SubmitKind.torrent,
           torrentBytes: _torrentBytes!,
           torrentName: _torrentName ?? 'file.torrent',
           saveDir: dir,
-        ));
+        );
+        if (onResult != null) onResult(r);
+        Navigator.of(context).pop(r);
     }
   }
 
