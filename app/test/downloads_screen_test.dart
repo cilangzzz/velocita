@@ -43,6 +43,9 @@ class _FakeRepo implements DownloadsRepository {
   Future<TaskSummary?> oneTask(String gid) async => null;
 
   @override
+  Future<Map<String, Object?>?> tellStatusRaw(String gid) async => null;
+
+  @override
   Future<Map<String, Object?>> getGlobalOption(List<String> keys) async =>
       const {};
 

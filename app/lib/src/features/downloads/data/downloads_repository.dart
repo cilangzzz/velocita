@@ -116,6 +116,19 @@ class DownloadsRepository {
     return taskFromAria2(raw);
   }
 
+  /// Raw aria2 `tellStatus` payload for a single gid, as a map. Returns
+  /// `null` if aria2 has forgotten the gid (e.g. pushed out of the
+  /// `tellStopped` page) or the call failed. Used by the HLS
+  /// orchestrator to poll segment completion without going through
+  /// the [taskFromAria2] mapper.
+  Future<Map<String, Object?>?> tellStatusRaw(String gid) async {
+    try {
+      return await _rpc.tellStatus(gid);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Read engine-wide options. The keys are aria2's native option names
   /// (e.g. `dir`, `max-concurrent-downloads`, `max-overall-download-limit`).
   Future<Map<String, Object?>> getGlobalOption(List<String> keys) =>

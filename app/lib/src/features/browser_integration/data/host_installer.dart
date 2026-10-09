@@ -216,6 +216,16 @@ Future<void> selfHealUrlScheme() async {
   }
 }
 
+/// Ensures the `HKCU\…\Run\VelocitaBrowserHelper` entry exists,
+/// pointing at the current `velocita.exe`. Idempotent; safe to call
+/// on every settings sync. The browser helper is then up at sign-in,
+/// removing the race where a download click arrives while no
+/// Velocita is listening.
+Future<void> ensureBrowserStartupProgram() => win.registerBrowserStartupProgram();
+
+/// Removes the `VelocitaBrowserHelper` Run entry. Idempotent.
+Future<void> removeBrowserStartupProgram() => win.unregisterBrowserStartupProgram();
+
 /// Writes a hand-crafted `.reg` file containing every registry entry
 /// the feature needs (Native Messaging host JSONs + the
 /// `velocita://` URL scheme handler). The user can double-click the

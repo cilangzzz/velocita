@@ -106,6 +106,7 @@ Future<KernelFacade> bootstrapKernel() async {
         rpc,
         defaultSaveDir: downloadDir.path,
       ),
+      proxyUrl: _loadPersistedProxy(dataDir.path),
     );
     _instance = facade;
     return facade;
@@ -193,6 +194,7 @@ class KernelFacade {
     required this.dataDir,
     required this.downloadDir,
     required this.downloadsRepository,
+    this.proxyUrl,
   });
 
   final Aria2ProcessManager processManager;
@@ -201,6 +203,13 @@ class KernelFacade {
   final String dataDir;
   final String downloadDir;
   final DownloadsRepository downloadsRepository;
+
+  /// Persisted HTTP proxy URL (e.g. `http://user:pass@host:port`) read
+  /// from `settings.json` at kernel bootstrap. Used by the HLS
+  /// playlist fetcher so the playlist fetch honours the same proxy
+  /// that aria2c was started with via `--all-proxy`. `null` when no
+  /// proxy is configured.
+  final String? proxyUrl;
 }
 
 class KernelFacadeException implements Exception {

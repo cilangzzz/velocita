@@ -21,6 +21,15 @@ const api = (typeof browser !== "undefined") ? browser : chrome;
 const SEEN = new WeakSet();           // HTMLMediaElement we've already wrapped
 const BUTTONS = new WeakMap();       // HTMLMediaElement -> HTMLButtonElement
 const HOVER_TIMER = new WeakMap();   // HTMLButtonElement -> { hideAt, armed }
+// At most ONE quality menu is open at a time (opening one closes any
+// other). Tracked with two plain variables — NOT a WeakMap, because the
+// close/cleanup paths need to enumerate the open menu and WeakMap is
+// neither iterable nor sized. Lifecycle: showQualityMenu sets both,
+// closeAllMenus clears both, removeButton closes when the media owning
+// the menu goes away.
+let activeMenu = null;               // currently open menu element
+let activeMenuMedia = null;          // media element the menu belongs to
+const RESIZE_OBSERVERS = new WeakMap(); // HTMLMediaElement -> ResizeObserver
 
 // Pause state (global "pause all" + per-site "pause this site"). Read
 // from chrome.storage.local; kept in sync via storage.onChanged so toggles
@@ -47,39 +56,51 @@ function getIconUrl() {
   );
   return api.runtime.getURL(dark ? "icons/floating-dark.svg" : "icons/floating.svg");
 }
-
 function ensureButton(media) {
   if (!isMedia(media) || SEEN.has(media)) return;
   SEEN.add(media);
 
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "velocita-floating";
+  btn.className = "velocita-floating velocita-pill";
   btn.setAttribute("aria-label", "Download with Velocita");
   btn.title = "Download with Velocita";
 
   Object.assign(btn.style, {
     position: "absolute",
     zIndex: "2147483647",
-    width: "36px",
-    height: "36px",
-    borderRadius: "18px",
+    width: "82px",
+    height: "30px",
+    borderRadius: "15px",
     border: "0",
     cursor: "pointer",
     top: "8px",
     right: "8px",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    backgroundImage: `url("${getIconUrl()}")`,
-    backgroundRepeat: "no-repeat",
-    backgroundPosition: "center",
-    backgroundSize: "20px 20px",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.62)",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.35)",
     color: "#fff",
-    padding: "0",
+    padding: "0 10px",
     display: "none",          // shown by reposition() when in viewport
     opacity: "0",
     transition: "opacity 120ms linear",
+    fontFamily:
+      '-apple-system, "Segoe UI", system-ui, Roboto, sans-serif',
+    fontSize: "12px",
+    fontWeight: "500",
+    lineHeight: "30px",
+    letterSpacing: "0.2px",
   });
+
+  // Inline icon + label so the pill width is content-driven.
+  const icon = document.createElement("img");
+  icon.src = getIconUrl();
+  icon.alt = "";
+  icon.style.width = "14px";
+  icon.style.height = "14px";
+  icon.style.marginRight = "6px";
+  icon.style.verticalAlign = "-2px";
+  btn.appendChild(icon);
+  btn.appendChild(document.createTextNode("Save"));
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -105,6 +126,33 @@ function ensureButton(media) {
   document.documentElement.appendChild(btn);
   BUTTONS.set(media, btn);
   reposition(media);
+
+  // ResizeObserver — catches size changes that MutationObserver does
+  // not (player expanding its container, CSS-driven resizes, PiP
+  // entering/leaving, intrinsic aspect changes after `loadedmetadata`).
+  try {
+    const ro = new ResizeObserver(() => reposition(media));
+    ro.observe(media);
+    RESIZE_OBSERVERS.set(media, ro);
+  } catch (_) {}
+
+  // Direct media-element events that can shift the player layout
+  // (controls appearing/disappearing on play/pause, src swap on
+  // `emptied`, PiP transitions). All fire before the next paint, so
+  // the pill follows within one frame.
+  const onMediaEvent = () => reposition(media);
+  for (const ev of [
+    "loadedmetadata",
+    "emptied",
+    "play",
+    "pause",
+    "ratechange",
+    "enterpictureinpicture",
+    "leavepictureinpicture",
+  ]) {
+    media.addEventListener(ev, onMediaEvent, { passive: true });
+  }
+
   // Run an initial hover-show so the user discovers the button.
   setTimeout(() => {
     if (!stateRef.armed) {
@@ -120,6 +168,12 @@ function ensureButton(media) {
 function removeButton(media) {
   const btn = BUTTONS.get(media);
   if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+  const ro = RESIZE_OBSERVERS.get(media);
+  if (ro) {
+    ro.disconnect();
+    RESIZE_OBSERVERS.delete(media);
+  }
+  if (activeMenuMedia === media) closeAllMenus();
   BUTTONS.delete(media);
   SEEN.delete(media);
 }
@@ -138,10 +192,10 @@ function reposition(media) {
     r.right > 0 && r.left < window.innerWidth;
   btn.style.display = inView ? "block" : "none";
   if (!inView) return;
-  // Position relative to the page (we placed the button on
-  // documentElement, so absolute = viewport coordinates).
+  // Anchor top-right of the video. Pill is 82px wide → leave 8px gap
+  // from the right edge: left = videoRight - 82 - 8 = videoRight - 90.
   const top = Math.max(window.scrollY + r.top + 8, window.scrollY);
-  const left = Math.max(window.scrollX + r.right - 44, window.scrollX);
+  const left = Math.max(window.scrollX + r.right - 90, window.scrollX);
   btn.style.top = `${top}px`;
   btn.style.left = `${left}px`;
 }
@@ -172,19 +226,184 @@ function flashError(btn) {
   setTimeout(() => { btn.style.outline = prev; }, 1500);
 }
 
-function onDownloadClick(media) {
+// ── quality menu ──────────────────────────────────────────────────
+// Open a vertical list of quality options anchored just below the
+// pill. On selection, send that URL via `velocita/sendUrl` and close.
+// Click outside closes.
+function closeAllMenus() {
+  if (activeMenu) {
+    if (activeMenu.parentNode) activeMenu.parentNode.removeChild(activeMenu);
+    activeMenu = null;
+    activeMenuMedia = null;
+  }
+}
+
+// Always opens a FRESH menu (closing any existing one first). The
+// pill-click toggle ("click again to close") is handled by the caller
+// in onDownloadClick, so the loading→variants refresh can call this
+// twice without accidentally closing itself.
+function showQualityMenu(media, btn, variants) {
+  closeAllMenus();
+  const menu = document.createElement("div");
+  menu.className = "velocita-menu";
+  Object.assign(menu.style, {
+    position: "absolute",
+    zIndex: "2147483647",
+    minWidth: "148px",
+    background: "rgba(20,20,22,0.94)",
+    borderRadius: "8px",
+    padding: "4px",
+    boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    fontFamily:
+      '-apple-system, "Segoe UI", system-ui, Roboto, sans-serif',
+    color: "#fff",
+  });
+
+  const header = document.createElement("div");
+  header.textContent = "Choose quality";
+  Object.assign(header.style, {
+    fontSize: "11px",
+    color: "rgba(255,255,255,0.55)",
+    padding: "6px 10px 4px",
+    letterSpacing: "0.4px",
+    textTransform: "uppercase",
+  });
+  menu.appendChild(header);
+
+  variants.forEach((v, idx) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.dataset.url = v.url;
+    item.dataset.label = v.label || "";
+    Object.assign(item.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "10px",
+      width: "100%",
+      padding: "8px 10px",
+      border: "0",
+      background: "transparent",
+      color: "#fff",
+      fontSize: "13px",
+      textAlign: "left",
+      cursor: "pointer",
+      borderRadius: "4px",
+    });
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = v.label || `Variant ${idx + 1}`;
+    item.appendChild(labelSpan);
+    if (idx === 0) {
+      const best = document.createElement("span");
+      best.textContent = "Best";
+      Object.assign(best.style, {
+        fontSize: "10px",
+        color: "rgba(255,255,255,0.55)",
+        background: "rgba(255,255,255,0.08)",
+        padding: "2px 6px",
+        borderRadius: "8px",
+      });
+      item.appendChild(best);
+    }
+    item.addEventListener("mouseenter", () => {
+      item.style.background = "rgba(255,255,255,0.10)";
+    });
+    item.addEventListener("mouseleave", () => {
+      item.style.background = "transparent";
+    });
+    item.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      closeAllMenus();
+      const resp = await api.runtime
+        .sendMessage({
+          type: "velocita/sendUrl",
+          payload: { url: v.url },
+        })
+        .catch(() => null);
+      if (!resp || !resp.ok) flashError(btn);
+    });
+    menu.appendChild(item);
+  });
+
+  // Position the menu just below the pill, right-aligned.
+  const pillRect = btn.getBoundingClientRect();
+  const top = pillRect.bottom + window.scrollY + 6;
+  const left = pillRect.right + window.scrollX - 148;
+  menu.style.top = `${top}px`;
+  menu.style.left = `${Math.max(left, window.scrollX + 4)}px`;
+
+  document.documentElement.appendChild(menu);
+  activeMenu = menu;
+  activeMenuMedia = media;
+}
+
+async function onDownloadClick(media) {
   if (gPaused) return;
   const btn = BUTTONS.get(media);
   const src = (media.currentSrc || media.src || null);
-  api.runtime.sendMessage(
-    { type: "velocita/pickAndSend", payload: { src } },
-    (resp) => {
-      // sendResponse may arrive after the SW dies — Chrome keeps the
-      // channel open, just no callback fires. Treat as failure if no
-      // response.
-      if (!resp || !resp.ok) flashError(btn);
-    },
-  );
+  // Toggle: clicking the pill while its menu is open closes it.
+  if (activeMenuMedia === media) {
+    closeAllMenus();
+    return;
+  }
+  // Open the menu immediately with a "Loading…" item, then fill it in
+  // once the SW replies. Gives instant feedback while the manifest
+  // fetch is in flight.
+  showQualityMenu(media, btn, [
+    { url: src || "", label: "Loading qualities…" },
+  ]);
+  // Mark the loading item as non-interactive.
+  const menu = activeMenu;
+  if (menu) {
+    const loading = menu.querySelector("button");
+    if (loading) {
+      loading.disabled = true;
+      loading.style.color = "rgba(255,255,255,0.6)";
+      loading.style.cursor = "default";
+    }
+  }
+
+  let resp;
+  try {
+    resp = await api.runtime.sendMessage({
+      type: "velocita/getQualities",
+      payload: { src },
+    });
+  } catch (_) {
+    resp = null;
+  }
+  if (!resp || !resp.ok) {
+    closeAllMenus();
+    // Fall back to single-URL send so the user still gets the file.
+    const fallback = await api.runtime
+      .sendMessage({
+        type: "velocita/pickAndSend",
+        payload: { src },
+      })
+      .catch(() => null);
+    if (!fallback || !fallback.ok) flashError(btn);
+    return;
+  }
+  if (!resp.variants || resp.variants.length <= 1) {
+    // Single URL — no menu needed, send directly.
+    closeAllMenus();
+    const single = (resp.variants && resp.variants[0]) || null;
+    const url = single ? single.url : src;
+    const ack = await api.runtime
+      .sendMessage({
+        type: "velocita/sendUrl",
+        payload: { url },
+      })
+      .catch(() => null);
+    if (!ack || !ack.ok) flashError(btn);
+    return;
+  }
+  // Replace the loading menu with the real variant list.
+  showQualityMenu(media, btn, resp.variants);
 }
 
 // ── observers ──────────────────────────────────────────────────────
@@ -208,7 +427,7 @@ try {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["src", "currentSrc", "style", "class"],
+    attributeFilter: ["src", "currentSrc", "style", "class", "controls"],
   });
 } catch (_) { /* observing a detached document (very early) */ }
 
@@ -241,6 +460,7 @@ api.runtime.sendMessage({ type: "velocita/injectSniffer" }).catch(() => {});
 // popup, on every already-open page.
 function applyPaused(velocita) {
   gPaused = computePaused(velocita);
+  if (gPaused) closeAllMenus();
   repositionAll();
 }
 api.storage.local
@@ -251,6 +471,12 @@ api.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.velocita) {
     applyPaused(changes.velocita.newValue);
   }
+});
+
+// Click anywhere outside a pill / menu closes any open quality menu.
+// closeAllMenus() is a cheap no-op when nothing is open.
+document.addEventListener("click", () => {
+  closeAllMenus();
 });
 
 // Console marker — useful when manually debugging the SW.

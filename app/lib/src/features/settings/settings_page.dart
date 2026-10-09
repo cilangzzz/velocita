@@ -118,8 +118,14 @@ class SettingsPage extends ConsumerWidget {
             _NatUpnpTile(),
           ],
         ),
-        // Browser integration — its own section from a parallel feature.
-        const BrowserIntegrationSection(),
+        // Browser integration — wrapped here so the section shares the
+        // same card style as the others. The section's own widget
+        // returns body content only (no header) — the card title
+        // above is the section's identity.
+        _SettingsCard(
+          title: l.browserIntegration,
+          children: const [BrowserIntegrationSection()],
+        ),
       ],
     );
   }

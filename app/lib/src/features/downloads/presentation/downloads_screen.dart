@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../features/categories/categories.dart';
 import '../../../features/categories/presentation/category_tree.dart';
+import '../../../features/hls/hls.dart';
 import '../../../kernel_bridge/kernel_provider.dart';
 import '../../../localization/app_localizations.dart';
 import '../domain/download_task.dart';
@@ -31,6 +32,55 @@ class DownloadsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tasksAsync = ref.watch(taskListProvider);
     final tasks = tasksAsync.value ?? const <String, TaskSummary>{};
+    final l = AppLocalizations.of(context);
+
+    // HLS lifecycle events → snackbar. listenManual + post-frame so we
+    // don't fire during build; the previous event is cleared after
+    // handling so a repeat of the same event still surfaces.
+    ref.listenManual<HlsEvent?>(hlsEventsProvider, (prev, next) {
+      if (next == null || prev?.jobId == next.jobId) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        if (messenger == null) return;
+        if (next.success && next.mergedFilePath != null) {
+          final name = next.mergedFilePath!
+              .split(RegExp(r'[\\/]'))
+              .last;
+          messenger.showSnackBar(SnackBar(
+            content: Text(l.hlsMerged(name)),
+            action: SnackBarAction(
+              label: l.openFolder,
+              onPressed: () {
+                final dir = next.mergedFilePath!
+                    .split(RegExp(r'[\\/]'))
+                    ..removeLast();
+                Process.start(
+                  'explorer',
+                  [dir.join('\\')],
+                  mode: ProcessStartMode.detached,
+                );
+              },
+            ),
+            duration: const Duration(seconds: 6),
+          ));
+        } else if (!next.success) {
+          final msg = next.message ?? '';
+          final isUnsupported = msg.startsWith('HlsUnsupportedFeature') ||
+              msg.contains('encryption') ||
+              msg.contains('EXT-X-') ||
+              msg.contains('live stream');
+          messenger.showSnackBar(SnackBar(
+            content: Text(isUnsupported
+                ? l.hlsUnsupported
+                : msg.startsWith('HlsFetchException') ||
+                        msg.startsWith('HTTP ')
+                    ? l.hlsFetchFailed(msg.replaceAll(RegExp(r'^[^\d]+'), ''))
+                    : l.hlsFetchFailed(msg)),
+            duration: const Duration(seconds: 6),
+          ));
+        }
+      });
+    });
 
     return Row(
       children: [

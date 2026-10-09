@@ -202,3 +202,61 @@ Future<void> unregisterVelocitaUrlScheme() async {
     _log.info('unregistered velocita:// URL scheme');
   }
 }
+
+// ── Browser startup program (HKCU Run) ──────────────────────
+
+const String _kRunKey = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
+
+/// Distinct value name so this entry is independent of the generic
+/// "Start at sign-in" toggle (`Velocita`) the Settings page manages.
+/// Two entries pointing at the same exe are harmless: the second
+/// instance detects the busy IPC port, forwards, and exits.
+const String _kBrowserRunValue = 'VelocitaBrowserHelper';
+
+/// Writes (or refreshes) a `HKCU\...\Run` entry pointing at the
+/// current `velocita.exe`, so Windows starts Velocita at sign-in and
+/// the browser helper is up **before** the user opens their browser —
+/// removing the race where a download click arrives while no
+/// Velocita is listening.
+///
+/// Idempotent: safe to call on every settings sync (self-heals a
+/// stale exe path after a rebuild/reinstall).
+Future<void> registerBrowserStartupProgram({String? exePath}) async {
+  final exe = exePath ?? Platform.resolvedExecutable;
+  final value = '"$exe"';
+  final code = await _runReg([
+    'add',
+    _kRunKey,
+    '/v',
+    _kBrowserRunValue,
+    '/t',
+    'REG_SZ',
+    '/d',
+    value,
+    '/f',
+  ]);
+  if (code != 0) {
+    throw StateError(
+      'reg add Run\\$_kBrowserRunValue failed with code $code',
+    );
+  }
+  _log.info('browser startup program registered -> $value');
+}
+
+/// Removes the `VelocitaBrowserHelper` Run entry. Idempotent — a
+/// non-zero exit (value absent) is treated as success.
+Future<void> unregisterBrowserStartupProgram() async {
+  final code = await _runReg([
+    'delete',
+    _kRunKey,
+    '/v',
+    _kBrowserRunValue,
+    '/f',
+  ]);
+  if (code != 0) {
+    _log.info('reg delete Run\\$_kBrowserRunValue returned $code '
+        '(treating as no-op)');
+  } else {
+    _log.info('browser startup program unregistered');
+  }
+}

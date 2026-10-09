@@ -65,12 +65,47 @@ class CategoriesNotifier extends AsyncNotifier<CategoriesState> {
         _rules.clear();
       }
     }
+    final downloads = await getDownloadsDirectory() ??
+        Directory('${dir.path}/velocita/downloads');
     if (_categories.isEmpty) {
-      final downloads = await getDownloadsDirectory() ??
-          Directory('${dir.path}/velocita/downloads');
       _categories = Category.defaults(downloads.path);
+    } else {
+      // Migrate: fold any seed extensions the user's persisted default
+      // categories are missing (e.g. `.m3u8` added after their first
+      // run) back in without touching their name / save dir / custom
+      // extensions. Idempotent — once present, nothing changes.
+      final changed = _mergeDefaultExtensions(downloads.path);
+      if (changed) await _persist();
     }
     return _snapshot();
+  }
+
+  /// For every `isDefault` category present in BOTH the persisted list
+  /// and the current [Category.defaults], append any seed extensions the
+  /// persisted one lacks. Returns `true` iff something changed.
+  bool _mergeDefaultExtensions(String downloadDir) {
+    final seeds = {for (final c in Category.defaults(downloadDir)) c.id: c};
+    var changed = false;
+    final next = <Category>[];
+    for (final cat in _categories) {
+      final seed = seeds[cat.id];
+      if (seed == null || !cat.isDefault) {
+        next.add(cat);
+        continue;
+      }
+      final missing = [
+        for (final e in seed.extensions)
+          if (!cat.extensions.contains(e)) e,
+      ];
+      if (missing.isEmpty) {
+        next.add(cat);
+      } else {
+        next.add(cat.copyWith(extensions: [...cat.extensions, ...missing]));
+        changed = true;
+      }
+    }
+    if (changed) _categories = next;
+    return changed;
   }
 
   CategoriesState _snapshot() => CategoriesState(

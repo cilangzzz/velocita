@@ -33,6 +33,7 @@ import '../domain/browser_integration_settings.dart';
 import 'browser_integration_service.dart';
 import 'browser_integration_settings_provider.dart';
 import 'host_bridge.dart';
+import 'host_installer.dart';
 
 /// Optional initial service provided by `main.dart` after its
 /// second-instance probe. The default is `null`; the controller
@@ -110,6 +111,11 @@ class BrowserIntegrationController extends Notifier<bool> {
   }
 
   void _onSettings(BrowserIntegrationSettings s) {
+    // Keep the OS-level "browser startup program" entry in sync with
+    // the enabled toggle, independent of whether the local service is
+    // currently running. Self-healing: a stale exe path in the Run
+    // value gets refreshed on every settings load.
+    unawaited(_syncStartupProgram(s.enabled));
     if (s.enabled && _service == null) {
       // Fire-and-forget. The future is stored so concurrent settings
       // changes don't kick off two parallel starts.
@@ -119,6 +125,19 @@ class BrowserIntegrationController extends Notifier<bool> {
       // false once the server's close() future resolves — see
       // _stopAsync below.
       unawaited(_stopAsync());
+    }
+  }
+
+  Future<void> _syncStartupProgram(bool enabled) async {
+    try {
+      if (enabled) {
+        await ensureBrowserStartupProgram();
+      } else {
+        await removeBrowserStartupProgram();
+      }
+    } catch (e) {
+      // Don't fail the controller on a registry hiccup — the user can
+      // still toggle the feature off and the next launch will retry.
     }
   }
 

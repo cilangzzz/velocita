@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../features/hls/hls.dart';
 import '../data/downloads_repository.dart';
 import '../domain/download_task.dart';
 
@@ -191,6 +192,18 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
     String? saveDir,
     Map<String, Object?>? aria2Options,
   }) async {
+    // HLS playlists need special handling: aria2 doesn't understand
+    // .m3u8, so route to the in-app HLS downloader which fetches the
+    // playlist, parses it, and enqueues each segment as a regular
+    // aria2 task under the hood.
+    if (isM3u8(url)) {
+      await ref.read(hlsDownloaderProvider).start(
+            url: url,
+            saveDir: saveDir ?? ref.read(downloadsRepositoryProvider).defaultSaveDir ?? '',
+            aria2Options: aria2Options,
+          );
+      return;
+    }
     final repo = ref.read(downloadsRepositoryProvider);
     final gid = await repo.addUri(
       url,

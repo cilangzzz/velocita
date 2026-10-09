@@ -24,6 +24,24 @@ void main() {
       expect(other.extensions, isEmpty);
     });
 
+    test('video category routes HLS/DASH playlists', () {
+      final cats = Category.defaults(r'/tmp');
+      final video = cats.firstWhere((c) => c.id == 'video');
+      expect(video.extensions, contains('.m3u8'));
+      expect(video.extensions, contains('.m3u'));
+      expect(video.extensions, contains('.mpd'));
+    });
+
+    test('m3u8 URL resolves into the Videos save dir', () {
+      final cats = Category.defaults(r'C:\Users\test\Downloads');
+      final dir = resolveSaveDir(
+        categories: cats,
+        filename: 'https://cdn.example.com/prog_index.m3u8',
+        defaultDownloadDir: r'C:\Users\test\Downloads',
+      );
+      expect(dir.toLowerCase(), contains(r'videos'));
+    });
+
     test('extensions are lowercased', () {
       final cats = Category.defaults(r'/tmp');
       final video = cats.firstWhere((c) => c.id == 'video');

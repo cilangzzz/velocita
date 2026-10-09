@@ -25,24 +25,21 @@ import 'install_instructions_dialog.dart';
 class BrowserIntegrationSection extends ConsumerWidget {
   const BrowserIntegrationSection({super.key});
 
+  /// Renders only the body content. The card title is supplied by
+  /// the caller (Settings page wraps us in a `_SettingsCard` so
+  /// the layout matches the other settings sections).
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l = AppLocalizations.of(context);
     final settings = ref.watch(browserIntegrationSettingsProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Section(title: l.browserIntegration),
-        settings.when(
-          data: (s) => _BrowserIntegrationContent(settings: s),
-          loading: () => const _SkeletonRow(),
-          error: (e, _) => ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l.browserIntegration),
-            subtitle: Text(e.toString()),
-          ),
-        ),
-      ],
+    return settings.when(
+      data: (s) => _BrowserIntegrationContent(settings: s),
+      loading: () => const _SkeletonRow(),
+      error: (e, _) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(l.browserIntegration),
+        subtitle: Text(e.toString()),
+      ),
     );
   }
 }
@@ -324,26 +321,6 @@ Future<void> _generateRegFile(BuildContext context) async {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Failed to write .reg file: $e')),
-    );
-  }
-}
-
-// ── small duplicated style primitives (private to settings_page.dart) ──
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title});
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-      ),
     );
   }
 }

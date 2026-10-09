@@ -42,6 +42,13 @@ class _PendingAddRequestListenerState
   ProviderSubscription<AsyncValue<AddRequest>>? _providerSub;
   StreamSubscription<AddTaskResult>? _resultSub;
 
+  /// The AddRequest currently going through the confirm-popup flow.
+  /// Only one request is in flight at a time (`_busy` serialises the
+  /// queue), so a single field is enough. Used by [_applyResult] to
+  /// replay the original referer/cookie/header into notifier.addUri
+  /// because the SubmitResult IPC payload doesn't carry headers back.
+  AddRequest? _inFlight;
+
   @override
   void initState() {
     super.initState();
@@ -103,10 +110,18 @@ class _PendingAddRequestListenerState
   Future<void> _processOne(AddRequest r) async {
     final settings = ref.read(browserIntegrationSettingsProvider).value ??
         const BrowserIntegrationSettings();
-    if (settings.showConfirmationPopup) {
-      await _spawnSubWindow(r);
-    } else {
-      await _autoAdd(r);
+    // Remember the request so the sub-window result path (_applyResult)
+    // can replay its referer/cookie/header into notifier.addUri — the
+    // SubmitResult IPC payload doesn't carry headers back.
+    _inFlight = r;
+    try {
+      if (settings.showConfirmationPopup) {
+        await _spawnSubWindow(r);
+      } else {
+        await _autoAdd(r);
+      }
+    } finally {
+      _inFlight = null;
     }
   }
 
@@ -172,14 +187,22 @@ class _PendingAddRequestListenerState
       'magnet=${r.magnet} saveDir=${r.saveDir}',
     );
     final notifier = ref.read(taskListProvider.notifier);
+    // Replay the original request's headers (referer/cookie/UA) so
+    // restricted CDNs work on the confirmation-popup path too — the
+    // auto-add path already does this.
+    final aria2Options =
+        _inFlight != null ? _toAria2Options(_inFlight!) : null;
     try {
       switch (r.kind) {
         case SubmitKind.url:
-          await notifier.addUri(r.url!, saveDir: r.saveDir);
+          await notifier.addUri(r.url!,
+              saveDir: r.saveDir, aria2Options: aria2Options);
         case SubmitKind.magnet:
-          await notifier.addMagnet(r.magnet!, saveDir: r.saveDir);
+          await notifier.addMagnet(r.magnet!,
+              saveDir: r.saveDir, aria2Options: aria2Options);
         case SubmitKind.torrent:
-          await notifier.addTorrent(r.torrentBytes!, saveDir: r.saveDir);
+          await notifier.addTorrent(r.torrentBytes!,
+              saveDir: r.saveDir, aria2Options: aria2Options);
       }
       await ipcLog('_applyResult: added OK');
     } catch (e, st) {

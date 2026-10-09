@@ -1,0 +1,15 @@
+  /// Spawn an Add-Task sub-window. The sub-window is its own OS
+  /// window (independent Flutter engine) — the main app's content
+  /// stays in the tray. The sub-window IPCs the result back via
+  /// `addTaskResultHandler`, which the listener has subscribed to
+  /// in [initState] and dispatches to [_onSubWindowResult].
+  ///
+  /// Note: deliberately does NOT call `_ensureWindowVisible()` —
+  /// the whole point of the sub-window is that the main app stays
+  /// in the tray. Bringing the main window to the foreground here
+  /// would re-introduce the "main app behind the dialog" UX that
+  /// the multi-window migration was meant to remove.
+  Future<void> _spawnSubWindow(AddRequest r) async {
+    if (!mounted) return;
+    await spawnAddTaskSubWindow(r);
+  }

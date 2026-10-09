@@ -589,6 +589,100 @@ function pickBestSniff(sniffList, videoSrc) {
   return best ? best.url : null;
 }
 
+// ── HLS master playlist → quality variants ──────────────────────────
+// Parses a master playlist and returns a list of quality options
+// `{url, label}` sorted highest-quality first. A media playlist
+// (segments only, no #EXT-X-STREAM-INF) returns `null` — we don't
+// expose segment lists to the user; the whole playlist is sent to
+// aria2 instead.
+function parseHlsMaster(text, baseUrl) {
+  const lines = text.split(/\r?\n/);
+  const variants = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
+    const info = line.substring("#EXT-X-STREAM-INF:".length);
+    const urlLine = (lines[i + 1] || "").trim();
+    if (!urlLine) continue;
+    let abs;
+    try {
+      abs = new URL(urlLine, baseUrl).toString();
+    } catch (_) {
+      abs = urlLine;
+    }
+    const resMatch = info.match(/RESOLUTION=(\d+)x(\d+)/i);
+    const bwMatch = info.match(/BANDWIDTH=(\d+)/i);
+    variants.push({
+      url: abs,
+      width: resMatch ? parseInt(resMatch[1], 10) : null,
+      height: resMatch ? parseInt(resMatch[2], 10) : null,
+      bandwidth: bwMatch ? parseInt(bwMatch[1], 10) : null,
+    });
+    i++;
+  }
+  if (variants.length < 2) return null; // need >=2 variants for a menu
+  variants.sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0));
+  return variants.map((v, i) => ({
+    url: v.url,
+    label: v.height
+      ? `${v.height}p`
+      : v.bandwidth
+        ? `${Math.round(v.bandwidth / 1000)} kbps`
+        : `Variant ${i + 1}`,
+    resolution:
+      v.width && v.height ? `${v.width}×${v.height}` : null,
+    bandwidth: v.bandwidth || null,
+  }));
+}
+
+async function fetchHlsVariants(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text.includes("#EXT-X-STREAM-INF")) return null; // media playlist, not master
+    return parseHlsMaster(text, url);
+  } catch (_) {
+    return null;
+  }
+}
+
+// Build the quality menu for a single video:
+//   1. Try the video element's own currentSrc if it ends in .m3u8.
+//   2. Otherwise scan the tab's sniffed URLs for a master playlist.
+//   3. If we get ≥2 variants, return them (sorted, highest first).
+//   4. Otherwise return a single-item list with the best sniff so the
+//      caller can use the existing single-click path.
+async function getQualitiesForTab(tabId, videoSrc) {
+  const bucket = sniffByTab.get(tabId);
+  const sniffed = bucket ? bucket.urls.map((h) => h.url) : [];
+  // Candidate list: videoSrc first (highest priority — that's what the
+  // page is actually playing), then sniffed URLs.
+  const tried = new Set();
+  const order = [];
+  if (videoSrc) order.push(videoSrc);
+  for (const u of sniffed) {
+    if (/\.m3u8(\?|#|$)/i.test(u)) order.push(u);
+  }
+  for (const u of order) {
+    if (tried.has(u)) continue;
+    tried.add(u);
+    const variants = await fetchHlsVariants(u);
+    if (variants && variants.length >= 2) {
+      return { sourceUrl: u, kind: "hls", variants };
+    }
+  }
+  const best = pickBestSniff(bucket ? bucket.urls : [], videoSrc);
+  if (best) {
+    return {
+      sourceUrl: best,
+      kind: "single",
+      variants: [{ url: best, label: "Download" }],
+    };
+  }
+  return null;
+}
+
 async function pickAndSend(tabId, videoSrc) {
   const bucket = sniffByTab.get(tabId);
   const candidates = bucket ? bucket.urls : [];
@@ -681,6 +775,45 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "velocita/pickAndSend") {
     pickAndSend(sender.tab?.id, message.payload?.src).then(sendResponse);
+    return true;
+  }
+  if (message.type === "velocita/getQualities") {
+    // Returns the best URL + a list of quality variants parsed from
+    // the HLS master playlist (if any). Single-item list when there's
+    // only one URL — the content script can auto-send in that case.
+    getQualitiesForTab(sender.tab?.id, message.payload?.src)
+      .then((r) => {
+        if (r) sendResponse({ ok: true, ...r });
+        else sendResponse({ ok: false, error: "no candidates" });
+      });
+    return true;
+  }
+  if (message.type === "velocita/sendUrl") {
+    // Explicit-URL send — used after the user picks a quality option
+    // from the floating menu.
+    const url = (message.payload && message.payload.url) || null;
+    if (!url) {
+      sendResponse({ ok: false, error: "missing url" });
+      return false;
+    }
+    (async () => {
+      const tabId = sender.tab?.id;
+      let pageUrl = null;
+      let pageTitle = null;
+      try {
+        const tab = await api.tabs.get(tabId);
+        pageUrl = tab?.url || null;
+        pageTitle = tab?.title || null;
+      } catch (_) {}
+      const ack = await sendToHost({
+        type: "add",
+        url,
+        referer: pageUrl,
+        tabTitle: pageTitle,
+        dedupKey: `quality|${tabId || 0}|${url}`,
+      });
+      sendResponse(ack);
+    })();
     return true;
   }
   if (message.type === "velocita/listSniffs") {

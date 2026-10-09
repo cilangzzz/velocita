@@ -192,6 +192,12 @@ class AppLocalizations {
   String get moveUp => _t(_catalog['moveUp']!);
   String get moveDown => _t(_catalog['moveDown']!);
   String get resetColumns => _t(_catalog['resetColumns']!);
+  String get hlsMerging => _t(_catalog['hlsMerging']!);
+  String hlsMerged(String filename) =>
+      _t(_catalog['hlsMerged']!).replaceAll('{filename}', filename);
+  String hlsFetchFailed(String code) =>
+      _t(_catalog['hlsFetchFailed']!).replaceAll('{code}', code);
+  String get hlsUnsupported => _t(_catalog['hlsUnsupported']!);
   String get browserIntegration => _t(_catalog['browserIntegration']!);
   String get browserIntegrationEnabled =>
       _t(_catalog['browserIntegrationEnabled']!);
@@ -415,6 +421,11 @@ const Map<String, Map<String, String>> _strings = {
     'moveUp': 'Move up',
     'moveDown': 'Move down',
     'resetColumns': 'Reset',
+    'hlsMerging': 'Merging HLS segments…',
+    'hlsMerged': 'HLS download finished: {filename}',
+    'hlsFetchFailed': 'HLS playlist fetch failed ({code})',
+    'hlsUnsupported':
+        'This HLS stream uses unsupported features (encryption / fMP4 / live) — aborted',
     'browserIntegration': 'Browser integration',
     'browserIntegrationEnabled': 'Enable browser integration',
     'browserIntegrationEnabledHint':
@@ -610,6 +621,10 @@ const Map<String, Map<String, String>> _strings = {
     'moveUp': '上移',
     'moveDown': '下移',
     'resetColumns': '重置',
+    'hlsMerging': '正在合并 HLS 分片…',
+    'hlsMerged': 'HLS 下载完成：{filename}',
+    'hlsFetchFailed': 'HLS 播放列表获取失败 ({code})',
+    'hlsUnsupported': '该 HLS 流包含不支持的内容（加密 / fMP4 / 直播），已中止',
     'browserIntegration': '浏览器集成',
     'browserIntegrationEnabled': '启用浏览器集成',
     'browserIntegrationEnabledHint':
@@ -793,6 +808,10 @@ const Map<String, String> _catalog = {
   'moveUp': 'moveUp',
   'moveDown': 'moveDown',
   'resetColumns': 'resetColumns',
+  'hlsMerging': 'hlsMerging',
+  'hlsMerged': 'hlsMerged',
+  'hlsFetchFailed': 'hlsFetchFailed',
+  'hlsUnsupported': 'hlsUnsupported',
   'browserIntegration': 'browserIntegration',
   'browserIntegrationEnabled': 'browserIntegrationEnabled',
   'browserIntegrationEnabledHint': 'browserIntegrationEnabledHint',
