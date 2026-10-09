@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:logging/logging.dart';
 
 import '../domain/add_request.dart';
+import 'host_installer.dart' as host_installer;
 
 final _log = Logger('Velocita.BrowserIntegration');
 
@@ -141,6 +142,8 @@ class BrowserIntegrationService {
           await _handleAdd(req, AddSource.hostForward, origin);
         case ('POST', '/api/deeplink'):
           await _handleAdd(req, AddSource.deepLink, origin);
+        case ('POST', '/api/register-extension'):
+          await _handleRegisterExtension(req, origin);
         default:
           _writeJson(req.response, 404, origin, {'error': 'not found'});
       }
@@ -223,6 +226,40 @@ class BrowserIntegrationService {
   }
 
   // ── response helpers ────────────────────────────────────────
+
+  /// Registers the calling browser extension's origin so the Native
+  /// Messaging host JSON's `allowed_origins` lists it. The extension calls
+  /// this with `{id: chrome.runtime.id}` before falling back to loopback
+  /// HTTP, so the *next* `sendNativeMessage` succeeds (Chrome refuses NM
+  /// delivery to an unlisted origin without spawning the host).
+  ///
+  /// Body: `{"id": "abc…"}` (the extension ID, with or without the
+  /// `chrome-extension://…/` wrapper).
+  Future<void> _handleRegisterExtension(HttpRequest req, String? origin) async {
+    final chunks = <int>[];
+    await for (final c in req) {
+      chunks.addAll(c);
+    }
+    Object? parsed;
+    try {
+      parsed = jsonDecode(utf8.decode(chunks));
+    } catch (e) {
+      _writeJson(req.response, 400, origin, {'error': 'invalid json'});
+      return;
+    }
+    final id = (parsed is Map) ? (parsed['id'] as String?)?.trim() : null;
+    if (id == null || id.isEmpty) {
+      _writeJson(req.response, 400, origin, {'error': 'missing id'});
+      return;
+    }
+    try {
+      await host_installer.registerExtensionId(id);
+      _writeJson(req.response, 200, origin, {'ok': true});
+    } catch (e) {
+      _log.warning('register-extension failed: $e');
+      _writeJson(req.response, 500, origin, {'error': e.toString()});
+    }
+  }
 
   static void _setCorsHeaders(HttpResponse res, String? origin) {
     // The server is bound to loopback only, so the only "attacker" is

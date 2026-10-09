@@ -122,28 +122,147 @@ async function flushSniffMap() {
 
 // ── core send / fall back ──────────────────────────────────────────────
 
-async function sendToHost(payload) {
-  // Try the Native Messaging host first.
+// Loopback HTTP endpoint (the desktop app's BrowserIntegrationService).
+const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_PORT = 16800;
+
+// How long we wait on a Native-Messaging send before falling through to
+// the HTTP path. When Velocita is closed but the NM host is registered,
+// Chrome spawns the host (the full velocita.exe), which becomes the
+// primary app and never ACKs the NM frame — so without a timeout this
+// promise would hang forever.
+const NM_TIMEOUT_MS = 3500;
+
+async function loopbackBase() {
+  const { host = DEFAULT_HOST, port = DEFAULT_PORT } =
+    await api.storage.local.get(["host", "port"]);
+  return `http://${host}:${port}`;
+}
+
+// Tells the running desktop app our extension ID so it can add
+// `chrome-extension://<id>/` to the host JSON's `allowed_origins`.
+// Chrome refuses to deliver Native-Messaging messages to an origin not
+// listed there, and an unpacked extension's ID is path-derived and
+// unknowable at install time — so we self-register over loopback HTTP
+// (whose CORS already whitelists chrome-extension:// origins).
+async function registerWithApp() {
   try {
-    const ack = await api.runtime.sendNativeMessage(HOST_NAME, payload);
-    return { ok: true, via: "host", ack };
-  } catch (e) {
-    // Host not found (Velocita not running, or NM not installed). Fall
-    // back to a `velocita://add?url=…` URL — the OS launches Velocita
-    // with the URL as argv, and `app_links` parses it back into the
-    // AddRequest flow.
-    const u = new URL("velocita://add");
-    u.searchParams.set("url", payload.url);
-    if (payload.referer) u.searchParams.set("referer", payload.referer);
-    if (payload.tabTitle) u.searchParams.set("tabTitle", payload.tabTitle);
-    if (payload.dedupKey) u.searchParams.set("dedupKey", payload.dedupKey);
+    const base = await loopbackBase();
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 1500);
     try {
-      await api.tabs.create({ url: u.toString() });
-    } catch (e2) {
-      console.error("Velocita extension: fallback velocita:// failed", e2);
+      const res = await fetch(`${base}/api/register-extension`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: api.runtime.id }),
+        signal: ctrl.signal,
+      });
+      return res.ok;
+    } finally {
+      clearTimeout(tid);
     }
-    return { ok: false, via: "fallback", error: String(e) };
+  } catch (e) {
+    console.debug("Velocita: register-extension failed (app not running?)", e);
+    return false;
   }
+}
+
+// Delivers the AddRequest payload over the loopback HTTP service
+// (`/api/add`). Works whenever Velocita is running, independently of
+// Native-Messaging registration. CORS is open to extension origins.
+async function sendViaHttp(payload) {
+  try {
+    const base = await loopbackBase();
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 3000);
+    try {
+      const res = await fetch(`${base}/api/add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: payload.url,
+          referer: payload.referer || null,
+          tabTitle: payload.tabTitle || null,
+          cookieHeader: payload.cookieHeader || null,
+          headers: payload.headers || null,
+          dedupKey: payload.dedupKey || null,
+          source: "extension",
+        }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) return { ok: false, status: res.status };
+      return { ok: true, via: "http", status: res.status };
+    } finally {
+      clearTimeout(tid);
+    }
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+// Promise.race with a hard deadline. Both arms resolve (never reject) so
+// the caller can't leak an unhandled rejection from the losing arm.
+function withTimeout(promise, ms, fallback) {
+  let timer;
+  return Promise.race([
+    promise.then((v) => v, () => fallback),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(fallback), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function sendToHost(payload) {
+  // 1) Native Messaging — the preferred transport: no browser prompts,
+  //    and spawning the host doubles as the "wake the app" mechanism.
+  //    Bounded by NM_TIMEOUT_MS because a spawned-but-unresponsive host
+  //    (app was closed and is still booting) never ACKs.
+  try {
+    const ack = await withTimeout(
+      api.runtime.sendNativeMessage(HOST_NAME, payload),
+      NM_TIMEOUT_MS,
+      null,
+    );
+    if (ack) return { ok: true, via: "host", ack };
+    console.debug("Velocita: NM host did not ACK (app was closed?)");
+  } catch (e) {
+    // Host not registered for this origin, or NM unavailable — the HTTP
+    // path below still works when Velocita is running. Chrome's message
+    // for an allowed_origins mismatch is "Specified native messaging host
+    // not found." — that exact string proves the host JSON needs our ID.
+    console.debug(
+      "Velocita: NM send failed, falling back to HTTP:",
+      (e && e.message) ? e.message : String(e),
+    );
+  }
+
+  // 2) Loopback HTTP — works whenever Velocita is up, regardless of NM
+  //    registration. Register our ID first so the NEXT NM attempt works.
+  await registerWithApp();
+  const h1 = await sendViaHttp(payload);
+  if (h1.ok) return h1;
+
+  // 3) App was probably closed; the NM attempt in (1) just spawned it.
+  //    Give the GUI a couple of seconds to bind the loopback port, then
+  //    retry HTTP once.
+  await sleep(2500);
+  await registerWithApp();
+  const h2 = await sendViaHttp(payload);
+  if (h2.ok) return h2;
+
+  // 4) Give up WITHOUT opening a `velocita://add?url=…` tab. Opening a
+  //    custom-scheme URL makes Chrome show an external-protocol
+  //    confirmation prompt ("This site is trying to open Velocita"),
+  //    which IDM / FDM-style extensions deliberately avoid. The caller
+  //    surfaces an in-extension error instead (button red-flash, popup
+  //    status line).
+  return {
+    ok: false,
+    via: "none",
+    error: "Velocita is not running or the browser integration is disabled",
+  };
 }
 
 async function pingHost() {
@@ -472,6 +591,10 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 api.runtime.onInstalled.addListener(async () => {
   try {
     await ensureInitialized();
+    // Register our real extension ID with the app so Native Messaging
+    // works immediately (the host JSON's allowed_origins starts with a
+    // placeholder that no real ID matches).
+    registerWithApp();
     const settings = await getSettings();
     if (settings.showContextMenu) {
       // Context menu creation is best-effort; an old install may have
@@ -503,6 +626,7 @@ api.runtime.onInstalled.addListener(async () => {
 api.runtime.onStartup.addListener(() => {
   // Rehydrate on browser cold-launch (no onInstalled fires here).
   ensureInitialized();
+  registerWithApp();
 });
 
 // CRITICAL — register download interception at module top level so a

@@ -162,6 +162,47 @@ Future<void> selfHeal() async {
   }
 }
 
+/// Adds a browser-extension origin to the host JSON's `allowed_origins`.
+///
+/// An unpacked extension's `chrome.runtime.id` is derived from its on-disk
+/// path and is not knowable when the host JSON is first written — hence the
+/// `__REPLACE_WITH_LOADED_ID__` placeholder in [buildHostJson]. The browser
+/// refuses to deliver Native-Messaging messages to an origin that isn't
+/// listed, so the extension tells us its real ID over loopback HTTP
+/// (`POST /api/register-extension`) and we rewrite the JSON here.
+///
+/// Merging (not replacing): keeps any previously-registered origins so a
+/// second extension instance (e.g. one loaded unpacked and one from the
+/// store) doesn't knock the first one out. `allowed_extensions` (Firefox)
+/// is left untouched. No registry change needed — Chrome reads the JSON
+/// fresh on every `sendNativeMessage` call.
+Future<void> registerExtensionId(String extensionId) async {
+  final id = extensionId.trim();
+  if (id.isEmpty) return;
+  final origin = id.startsWith('chrome-extension://')
+      ? id
+      : 'chrome-extension://$id/';
+  final file = await _hostJsonFile();
+  Map<String, Object?> json;
+  try {
+    json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
+  } catch (_) {
+    json = buildHostJson();
+  }
+  final origins = (json['allowed_origins'] as List?)
+          ?.whereType<String>()
+          .toList(growable: true) ??
+      <String>[];
+  if (!origins.contains(origin)) {
+    origins.add(origin);
+    json['allowed_origins'] = origins;
+    await file.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(json),
+    );
+    _log.info('registered extension origin: $origin');
+  }
+}
+
 /// Self-heals the `velocita://` URL scheme registration. Cheap; safe
 /// to call on every app start. Re-writes the four registry entries
 /// when the launcher's path differs from the current

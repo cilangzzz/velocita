@@ -136,12 +136,30 @@ Toggle `enabled` from the toolbar popup without reloading the extension.
 - HLS (`.m3u8`) is shipped to aria2 verbatim — aria2 ≥ 1.36 fetches all
   segments. DASH (`.mpd`) follows the same rule.
 
-### Fallback
+### Fallback (no browser prompts)
 
-If Native Messaging fails (Velocita not running or NM not installed), the
-extension opens `velocita://add?url=…` in a new tab. The OS launches
-Velocita, which parses the URL via `app_links` and feeds it into the same
-`AddRequest` pipeline.
+`sendToHost` never opens a `velocita://` URL in a tab — Chrome would show
+an external-protocol confirmation dialog for it, which is exactly what
+IDM / FDM-style extensions avoid. Instead it walks three channels, in
+order:
+
+1. **Native Messaging** — bounded by a 3.5 s timeout (a spawned host that
+   has become the primary app never ACKs, so an unbounded wait hangs).
+2. **Loopback HTTP** — `POST http://127.0.0.1:<port>/api/add` works
+   whenever Velocita is running, regardless of NM registration. Before
+   this, the extension self-registers its real `chrome.runtime.id` via
+   `POST /api/register-extension` so the *next* NM attempt also works.
+3. **Wake + retry** — if the app was closed, the NM attempt in (1) already
+   spawned `velocita.exe` (the host *is* the app), so the extension waits
+   ~2.5 s for the loopback port to come up and retries HTTP once.
+
+If all three fail, the extension returns a failure and the UI shows an
+in-extension error (floating button red-flashes, popup status line) —
+**no browser protocol dialog**.
+
+The `velocita://` scheme remains registered on the OS for non-extension
+sources (bookmarks, other apps launching Velocita), but the extension
+does not use it as a delivery channel.
 
 ## Inspecting the service worker
 
@@ -163,6 +181,80 @@ To force-kill the SW for the lifecycle test:
 `chrome://serviceworker-internals` → find Velocita → **Stop**. Trigger any
 download afterwards and verify the listener still fires (proves listeners
 are registered at module top level, not inside `onInstalled`).
+
+## Debugging Native Messaging
+
+Four layers, from cheapest to most detailed:
+
+### 1. Extension service-worker console (start here)
+
+`chrome://extensions` → Velocita card → **Service worker** → **Inspect views**.
+
+`background.js` now logs every NM outcome:
+
+- `Velocita: NM send failed, falling back to HTTP: <reason>` — the reason
+  string is Chrome's own. The classic one for this project:
+  - **`Specified native messaging host not found.`** → the host JSON's
+    `allowed_origins` doesn't list this extension (the placeholder bug),
+    or the registry doesn't point at a readable JSON. Fix: let the
+    extension self-register (`/api/register-extension`) or edit
+    `com.velocita.host.json` manually.
+  - `Native host has exited.` → the host (velocita.exe) started but
+    crashed/exited before answering.
+- `Velocita: NM host did not ACK (app was closed?)` → the host spawned but
+  became the primary app without reading stdin; the extension moved on to
+  HTTP after `NM_TIMEOUT_MS`.
+- `Velocita: register-extension failed …` → loopback `/api/register-extension`
+  unreachable (app not running, or browser integration disabled).
+
+### 2. Chrome's own host-spawn trace (`--v=1`)
+
+Chrome does **not** log native-messaging host lifecycle at the default
+`--enable-logging` verbosity — the `chrome_debug.log` you may already have
+only holds crash-pad / policy noise. To capture spawn + manifest decisions:
+
+1. Fully quit Chrome.
+2. Launch it with verbose logging (add to the shortcut or a console):
+   ```
+   "C:\Program Files\Google\Chrome\Application\chrome.exe" --enable-logging --v=1
+   ```
+3. Exercise the extension, then read:
+   `%LOCALAPPDATA%\Google\Chrome\User Data\chrome_debug.log`
+
+You'll see lines like `native_message_process_launcher_win` / manifest
+resolution errors. The verbose log is noisy — grep for `native`/`messag`.
+
+### 3. Frame dumper (see exactly what the extension sends)
+
+`debug/native-messaging-dump.js` (Node ≥ 18) is a drop-in fake host that
+records every frame Chrome delivers:
+
+```
+node browser_extension/debug/native-messaging-dump.js
+# → [velocita-nm] logging to %TEMP%\velocita-nm-dump.log
+```
+
+To route the real extension into it, temporarily point the host registry
+keys at the script (keep `allowed_origins` = your extension ID), reload
+the extension, trigger a download, then restore:
+
+```
+HKCU\SOFTWARE\Google\Chrome\NativeMessagingHosts\com.velocita.host
+  →  node "C:\path\to\native-messaging-dump.js"
+```
+
+The log shows the exact JSON payload (`RX { … }`) and the ack sent back.
+Set `VELOCITA_NM_FORWARD=1` to also forward each frame to the real app's
+`/api/host` for end-to-end checks.
+
+### 4. Host side (velocita.exe as NM host)
+
+When Chrome spawns `velocita.exe` as the host, the app's `Logger` output
+(stderr) is only surfaced through the Chrome `--v=1` debug log (layer 2).
+The relevant lines come from `Velocita.HostBridge`:
+`stdin probe: …`, `POST /api/host failed: …`, and `Velocita.Main: argv: …`.
+The app also writes `aria2.log` under its app-support dir if you need to
+confirm the task actually reached aria2.
 
 ## Known cross-browser deltas
 

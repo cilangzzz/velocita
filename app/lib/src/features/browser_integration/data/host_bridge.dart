@@ -117,6 +117,14 @@ Future<({String url, String? referer, String? tabTitle, String source})?>
         'referer': body['referer'],
         'tabTitle': body['tabTitle'],
         'source': 'hostForward',
+        // Cookie / header / dedup passthrough (extension download
+        // interception). Unknown keys in `body` are forwarded verbatim so
+        // the primary's `_handleAdd` gets the same fields the browser sent.
+        if (body['cookieHeader'] != null) 'cookieHeader': body['cookieHeader'],
+        if (body['headers'] != null) 'headers': body['headers'],
+        if (body['dedupKey'] != null) 'dedupKey': body['dedupKey'],
+        if (body['suggestedFilename'] != null)
+          'suggestedFilename': body['suggestedFilename'],
       });
       await writeFrame(stdout, {
         'ok': ok,

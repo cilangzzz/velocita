@@ -39,9 +39,9 @@ $dl.addEventListener("click", async () => {
     if (result && result.ok) {
       $status.textContent = result.via === "host"
         ? "Sent to Velocita"
-        : "Velocita was not running — opened in new tab";
+        : "Sent to Velocita (via local service)";
     } else {
-      $status.textContent = "Failed: " + (result && result.error);
+      $status.textContent = "Velocita is not running — start it and retry";
     }
   } finally {
     $dl.disabled = false;

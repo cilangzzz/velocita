@@ -128,6 +128,11 @@ class _PendingAddRequestListenerState
     // not invalidate it, and `mounted` was rechecked above.
     final result = await showDialog<SubmitResult>(
       context: ctx,
+      // No modal scrim — the dialog floats alone over the Velocita
+      // window; the rest of the app stays visible (and clickable to
+      // dismiss: barrierDismissible=true with a transparent barrier
+      // still eats the click).
+      barrierColor: Colors.transparent,
       barrierDismissible: true,
       builder: (_) => AddTaskDialog(initialUrl: r.url),
     );
@@ -156,6 +161,16 @@ class _PendingAddRequestListenerState
     try {
       await windowManager.show();
       await windowManager.focus();
+      // Windows refuses `SetForegroundWindow` when the calling code
+      // wasn't triggered by a user action (NM messages and deep links
+      // don't count). The reliable workaround is a brief
+      // `setAlwaysOnTop(true)` flash that forces the window above
+      // others at the OS level; we restore the previous state ~120 ms
+      // later. The flash is too short for the user to perceive, but
+      // enough to make the dialog actually visible.
+      await windowManager.setAlwaysOnTop(true);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await windowManager.setAlwaysOnTop(false);
     } catch (_) {
       // Window manager isn't always available (tests, hot reload).
       // Silently no-op; the dialog can still be scheduled.
