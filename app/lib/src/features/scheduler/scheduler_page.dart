@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../localization/app_localizations.dart';
+import '../../theme/radii.dart';
 
 /// Scheduler page — M4 surface.
 ///
@@ -114,7 +115,7 @@ class _SchedulerGrid extends StatelessWidget {
                           : Theme.of(context)
                               .colorScheme
                               .surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: Radii.brXs,
                     ),
                   ),
                 ),
@@ -152,7 +153,7 @@ class _Legend extends StatelessWidget {
           height: 16,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: Radii.brXs,
           ),
         ),
         const SizedBox(width: 4),

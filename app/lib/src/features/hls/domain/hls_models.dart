@@ -94,7 +94,8 @@ class HlsJob {
     required this.baseName,
     required this.segments,
     this.mapUri,
-  });
+    DateTime? addedAt,
+  }) : addedAt = addedAt ?? DateTime.now();
 
   final String id;
   final String url;
@@ -105,6 +106,10 @@ class HlsJob {
 
   /// fMP4 init segment (from `#EXT-X-MAP`), `null` for MPEG-TS.
   final Uri? mapUri;
+
+  /// Wall-clock when the job started (drives the table's Added column
+  /// on the synthetic row).
+  final DateTime addedAt;
 
   final List<String> segmentGids = [];
 
@@ -120,6 +125,14 @@ class HlsJob {
 
   /// Name of the merged output file in [saveDir].
   String get outputFileName => '$baseName$outputExtension';
+}
+
+/// Thrown when the user removes the HLS row while the job is running
+/// (cancel request). Not surfaced as an error.
+class HlsCancelled implements Exception {
+  const HlsCancelled();
+  @override
+  String toString() => 'HlsCancelled';
 }
 
 /// Thrown by the parser when the playlist body is unparseable.

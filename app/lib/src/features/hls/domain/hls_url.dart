@@ -19,19 +19,27 @@ bool isM3u8(String url) {
 
 /// Derive a filesystem-safe base filename from an HLS playlist URL.
 ///
-/// Strips the `.m3u8` / `.m3u` extension, sanitizes characters
-/// forbidden on Windows and POSIX (`< > : " / \ | ? *` plus control
-/// chars), and caps the length at 80. The merged output is named
-/// `<baseName>.ts`; this is what produces the stem.
+/// Strips the `.m3u8` / `.m3u` extension and delegates to
+/// [sanitizeFileName]. The merged output is named `<baseName>.ts`
+/// (or `.mp4` for fMP4); this is what produces the stem.
 String baseNameForHlsUrl(Uri uri) {
   var last = uri.pathSegments.isEmpty ? 'stream' : uri.pathSegments.last;
   var stem = last;
   final dot = last.lastIndexOf('.');
   if (dot > 0) stem = last.substring(0, dot);
   if (stem.isEmpty) stem = 'stream';
-  // Forbidden on Windows + control characters.
+  return sanitizeFileName(stem);
+}
+
+/// Sanitize a user- (or page-) supplied name for use as a filename
+/// stem: strips characters forbidden on Windows and POSIX
+/// (`< > : " / \ | ? *` plus control chars), trims, and caps at 80
+/// characters.
+String sanitizeFileName(String input, {int maxLength = 80}) {
   final banned = RegExp(r'[<>:"/\\|?*\x00-\x1f]');
-  stem = stem.replaceAll(banned, '_').trim();
-  if (stem.length > 80) stem = stem.substring(0, 80);
-  return stem;
+  var v = input.replaceAll(banned, '_').trim();
+  // Collapse runs of whitespace/underscores left by long page titles.
+  v = v.replaceAll(RegExp(r'\s+'), ' ');
+  if (v.length > maxLength) v = v.substring(0, maxLength).trim();
+  return v;
 }

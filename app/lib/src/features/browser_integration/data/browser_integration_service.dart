@@ -198,6 +198,7 @@ class BrowserIntegrationService {
     final requestHeaders = rawHeaders is List
         ? rawHeaders.whereType<String>().toList(growable: false)
         : null;
+    final suggestedFilename = (parsed['suggestedFilename'] as String?)?.trim();
     final request = AddRequest(
       url: url,
       source: source,
@@ -208,6 +209,10 @@ class BrowserIntegrationService {
           cookieHeader == null || cookieHeader.isEmpty ? null : cookieHeader,
       requestHeaders:
           requestHeaders == null || requestHeaders.isEmpty ? null : requestHeaders,
+      suggestedFilename:
+          suggestedFilename == null || suggestedFilename.isEmpty
+              ? null
+              : suggestedFilename,
     );
     final dedupKey = (parsed['dedupKey'] as String?)?.trim();
     if (dedupKey != null && dedupKey.isNotEmpty) {

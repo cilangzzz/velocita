@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/category.dart';
 import '../../../localization/app_localizations.dart';
+import '../../../theme/radii.dart';
 
 /// Modal dialog for creating or editing a [Category].
 ///
@@ -461,7 +462,7 @@ class _IconPicker extends StatelessWidget {
                 border: Border.all(
                   color: Theme.of(context).dividerColor,
                 ),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: Radii.brSm,
               ),
               child: Icon(entry.value, size: 18),
             ),

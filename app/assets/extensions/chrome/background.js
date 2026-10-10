@@ -78,6 +78,14 @@ const DEFAULT_SETTINGS = Object.freeze({
   blacklist: [],                    // string substrings; matched against URL
   pausedSites: [],                  // hostnames to skip ("pause this site")
   showContextMenu: true,
+  // Per-request header injection — every add path (intercept, context
+  // menu, sniff pick, quality menu) funnels through sendToHost, so
+  // these three toggles control the global "what to send to aria2"
+  // behavior. Each is opt-OUT: defaults to true so the existing
+  // download behavior is preserved on update.
+  injectCookies: true,              // chrome.cookies.getAll → "Cookie:" header
+  injectUserAgent: true,            // navigator.userAgent → "User-Agent:" header
+  injectReferer: true,              // payload.referer → aria2 "referer" option
 });
 
 // ── lifecycle / settings cache ──────────────────────────────────────────
@@ -227,6 +235,7 @@ async function sendViaHttp(payload) {
           cookieHeader: payload.cookieHeader || null,
           headers: payload.headers || null,
           dedupKey: payload.dedupKey || null,
+          suggestedFilename: payload.suggestedFilename || null,
           source: "extension",
         }),
         signal: ctrl.signal,
@@ -255,7 +264,105 @@ function withTimeout(promise, ms, fallback) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The browser's own User-Agent — the same one the server saw when the
+// page loaded, so CDNs that gate on UA accept the replayed request.
+// Without this, aria2 announces itself as `aria2/<version>` and many
+// hotlink-protected CDNs answer 403.
+function browserUA() {
+  try {
+    return navigator.userAgent || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Shapes the aria2 `header` option array from the enriched payload.
+// Referer deliberately goes via the dedicated `referer` FIELD (the
+// desktop maps it to aria2's `referer` option, which wins when both
+// are set) — not duplicated here.
+function buildHeaderArray(payload) {
+  const headers = [];
+  if (payload.cookieHeader) headers.push(`Cookie: ${payload.cookieHeader}`);
+  if (payload.userAgent) headers.push(`User-Agent: ${payload.userAgent}`);
+  return headers;
+}
+
+// Header-array helpers used to gate injection toggles. Case-insensitive —
+// HTTP header names are case-insensitive per RFC 7230.
+function stripHeader(payload, name) {
+  const prefix = name.toLowerCase() + ":";
+  if (Array.isArray(payload.headers)) {
+    payload.headers = payload.headers.filter(
+      (h) => typeof h !== "string" || h.toLowerCase().indexOf(prefix) !== 0,
+    );
+  }
+}
+function hasHeader(payload, name) {
+  const prefix = name.toLowerCase() + ":";
+  return (
+    Array.isArray(payload.headers) &&
+    payload.headers.some(
+      (h) => typeof h === "string" && h.toLowerCase().indexOf(prefix) === 0,
+    )
+  );
+}
+
+// File basename — aria2's `out` option is a filename relative to `dir`,
+// never a path. waitForFilename hands us an absolute local path, so
+// strip everything up to the last separator.
+function baseName(p) {
+  if (!p) return null;
+  const base = String(p).split(/[\\/]/).pop();
+  return base || null;
+}
+
 async function sendToHost(payload) {
+  // Enrich every outbound add with auth context for the target URL,
+  // gated by the user's "inject X" toggles in settings.
+  //   * cookies via chrome.cookies.getAll (HttpOnly included) unless the
+  //     caller already collected some,
+  //   * the browser's own User-Agent,
+  //   * the `headers` array shaped for aria2's `header` option.
+  // All add paths (download intercept, context menu, sniff pick, quality
+  // menu, popup) funnel through here, so call sites stay dumb.
+  if (payload && payload.url) {
+    const s = await getSettings().catch(() => ({}));
+    const wantCookie  = s.injectCookies !== false;
+    const wantUA      = s.injectUserAgent !== false;
+    const wantReferer = s.injectReferer !== false;
+
+    // First, strip whatever the toggles disable (and any header entry
+    // the caller pre-supplied) so the field never reaches aria2.
+    if (!wantReferer) delete payload.referer;
+    if (!wantCookie)  delete payload.cookieHeader;
+    if (!wantUA)      stripHeader(payload, "user-agent");
+
+    // Then enrich only what is still wanted and missing.
+    if (wantCookie && !payload.cookieHeader) {
+      try {
+        const cookies = await api.cookies.getAll({ url: payload.url });
+        const cookieHeader = (cookies || [])
+          .map((c) => `${c.name}=${c.value}`)
+          .filter(Boolean)
+          .join("; ");
+        if (cookieHeader) payload.cookieHeader = cookieHeader;
+      } catch (_) {
+        // cookies.getAll can fail on chrome:// pages etc. — proceed bare.
+      }
+    }
+    if (wantUA && !hasHeader(payload, "user-agent")) {
+      if (!payload.userAgent) payload.userAgent = browserUA();
+    }
+    if (
+      (wantCookie && payload.cookieHeader) ||
+      (wantUA && (payload.userAgent || hasHeader(payload, "user-agent")))
+    ) {
+      if (!Array.isArray(payload.headers) || payload.headers.length === 0) {
+        payload.headers = buildHeaderArray(payload);
+      }
+    }
+  }
+
   // 1) Native Messaging — the preferred transport: no browser prompts,
   //    and spawning the host doubles as the "wake the app" mechanism.
   //    Bounded by NM_TIMEOUT_MS because a spawned-but-unresponsive host
@@ -436,22 +543,11 @@ async function handleIntercept(item) {
       }
     }
 
-    // Collect cookies so restricted downloads can authenticate.
+    // Cookies + User-Agent are attached centrally in sendToHost (it
+    // covers every add path, not just interception). Here we only wait
+    // for the browser-determined filename so the desktop can pass it
+    // to aria2 as `out`.
     const dlUrl = item.finalUrl || item.url;
-    let cookieHeader = "";
-    try {
-      const cookies = await api.cookies.getAll({ url: dlUrl });
-      cookieHeader = (cookies || [])
-        .map((c) => `${c.name}=${c.value}`)
-        .filter(Boolean)
-        .join("; ");
-    } catch (e) {
-      console.error("Velocita: cookies.getAll failed", e);
-    }
-
-    const headers = [];
-    if (cookieHeader) headers.push(`Cookie: ${cookieHeader}`);
-    if (item.referrer) headers.push(`Referer: ${item.referrer}`);
 
     const dedupKey = `dl|${dlUrl}|${filename || ""}`;
 
@@ -461,9 +557,7 @@ async function handleIntercept(item) {
       referer: pageUrl || item.referrer || null,
       tabTitle: pageTitle,
       dedupKey,
-      cookieHeader: cookieHeader || null,
-      headers,
-      suggestedFilename: filename || null,
+      suggestedFilename: baseName(filename),
     });
 
     if (ack && ack.ok) {
@@ -591,10 +685,43 @@ function pickBestSniff(sniffList, videoSrc) {
 
 // ── HLS master playlist → quality variants ──────────────────────────
 // Parses a master playlist and returns a list of quality options
-// `{url, label}` sorted highest-quality first. A media playlist
+// `{url, label, detail}` sorted highest-quality first. A media playlist
 // (segments only, no #EXT-X-STREAM-INF) returns `null` — we don't
 // expose segment lists to the user; the whole playlist is sent to
 // aria2 instead.
+//
+// Per-variant attributes surfaced (matching what IDM shows):
+//   RESOLUTION (width×height), BANDWIDTH / AVERAGE-BANDWIDTH (kbps),
+//   FRAME-RATE (fps), CODECS (video codec friendly name).
+
+// Maps the video codec tag from the CODECS attribute to a friendly
+// name. CODECS is a comma list ("avc1.640028,mp4a.40.2") — the first
+// video codec wins; audio codecs are ignored.
+function parseVideoCodec(codecs) {
+  if (!codecs) return null;
+  const list = String(codecs)
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const video = list.find(
+    (c) =>
+      c.startsWith("avc1") ||
+      c.startsWith("avc3") ||
+      c.startsWith("hvc1") ||
+      c.startsWith("hev1") ||
+      c.startsWith("av01") ||
+      c.startsWith("vp09") ||
+      c.startsWith("vp8"),
+  );
+  if (!video) return null;
+  if (video.startsWith("avc")) return "H.264";
+  if (video.startsWith("hvc") || video.startsWith("hev")) return "H.265";
+  if (video.startsWith("av01")) return "AV1";
+  if (video.startsWith("vp09")) return "VP9";
+  if (video.startsWith("vp8")) return "VP8";
+  return null;
+}
+
 function parseHlsMaster(text, baseUrl) {
   const lines = text.split(/\r?\n/);
   const variants = [];
@@ -610,29 +737,74 @@ function parseHlsMaster(text, baseUrl) {
     } catch (_) {
       abs = urlLine;
     }
+    // Attribute reader: handles both quoted values (CODECS="a,b" — the
+    // comma inside quotes must NOT end the match) and bare numbers
+    // (BANDWIDTH=2147000).
+    const attr = (name) => {
+      const quoted = info.match(new RegExp(`${name}="([^"]*)"`, "i"));
+      if (quoted) return quoted[1].trim();
+      const bare = info.match(new RegExp(`${name}=([^,\\s]+)`, "i"));
+      return bare ? bare[1].trim() : null;
+    };
+    const num = (name) => {
+      const m = info.match(new RegExp(`${name}=(\\d+(?:\\.\\d+)?)`, "i"));
+      return m ? parseFloat(m[1]) : null;
+    };
     const resMatch = info.match(/RESOLUTION=(\d+)x(\d+)/i);
-    const bwMatch = info.match(/BANDWIDTH=(\d+)/i);
+    // Prefer AVERAGE-BANDWIDTH (more representative) over peak BANDWIDTH.
+    const bandwidth = num("AVERAGE-BANDWIDTH") || num("BANDWIDTH");
+    const fps = num("FRAME-RATE");
     variants.push({
       url: abs,
       width: resMatch ? parseInt(resMatch[1], 10) : null,
       height: resMatch ? parseInt(resMatch[2], 10) : null,
-      bandwidth: bwMatch ? parseInt(bwMatch[1], 10) : null,
+      bandwidth,
+      fps: fps && fps > 0 ? fps : null,
+      codec: parseVideoCodec(attr("CODECS")),
     });
     i++;
   }
   if (variants.length < 2) return null; // need >=2 variants for a menu
   variants.sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0));
-  return variants.map((v, i) => ({
-    url: v.url,
-    label: v.height
-      ? `${v.height}p`
+
+  // Build labels + detail lines. Label = "{height}p{fps}" (fps only when
+  // >30, so 25/30fps variants stay clean) or "{kbps} kbps" without
+  // resolution. Detail = "width×height · kbps · codec" — always shows
+  // bandwidth, so same-resolution variants stay distinguishable (IDM
+  // style). Exact label collisions (same height AND bandwidth) get an
+  // index suffix.
+  const out = variants.map((v, idx) => {
+    const fpsSuffix = v.fps && Math.round(v.fps) > 30 ? String(Math.round(v.fps)) : "";
+    const label = v.height
+      ? `${v.height}p${fpsSuffix}`
       : v.bandwidth
         ? `${Math.round(v.bandwidth / 1000)} kbps`
-        : `Variant ${i + 1}`,
-    resolution:
-      v.width && v.height ? `${v.width}×${v.height}` : null,
-    bandwidth: v.bandwidth || null,
-  }));
+        : `Variant ${idx + 1}`;
+    const detailParts = [];
+    if (v.width && v.height) detailParts.push(`${v.width}×${v.height}`);
+    if (v.bandwidth) detailParts.push(`${Math.round(v.bandwidth / 1000)} kbps`);
+    if (v.codec) detailParts.push(v.codec);
+    return {
+      url: v.url,
+      label,
+      detail: detailParts.join(" · ") || null,
+      resolution: v.width && v.height ? `${v.width}×${v.height}` : null,
+      bandwidth: v.bandwidth || null,
+      fps: v.fps || null,
+      codec: v.codec || null,
+    };
+  });
+  const labelCount = new Map();
+  for (const item of out) {
+    const n = labelCount.get(item.label) || 0;
+    labelCount.set(item.label, n + 1);
+    if (n > 0) {
+      item.label = item.bandwidth
+        ? `${item.label} · ${Math.round(item.bandwidth / 1000)}k`
+        : `${item.label} #${n + 1}`;
+    }
+  }
+  return out;
 }
 
 async function fetchHlsVariants(url) {

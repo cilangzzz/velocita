@@ -7,11 +7,13 @@ export 'domain/hls_models.dart'
         HlsVariant,
         HlsPlaylist,
         HlsJob,
+        HlsCancelled,
         HlsParseException,
         HlsUnsupportedFeature,
         HlsFetchException,
         HlsMergerException;
-export 'domain/hls_url.dart' show isM3u8, baseNameForHlsUrl;
+export 'domain/hls_url.dart'
+    show isM3u8, baseNameForHlsUrl, sanitizeFileName;
 export 'presentation/hls_downloader.dart'
     show
         HlsDownloader,

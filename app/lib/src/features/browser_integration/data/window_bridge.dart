@@ -28,16 +28,73 @@ import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../domain/add_request.dart';
 import '../../downloads/presentation/add_task_dialog.dart';
 
-/// Best-effort append-only log for the sub-window IPC path, written
-/// to `%APPDATA%\Velocita\ipc.log`. We deliberately do NOT use
-/// `path_provider` here: this file is imported by both the main app
-/// and the Add-Task sub-window engine, and `path_provider` is not
-/// registered on sub-window engines — the env var works everywhere.
-/// Used to diagnose "sub-window confirmed but no task was created".
+/// Bounds for the sub-window, computed at spawn time from the main
+/// app's current window size. Encoded as `{w, h}` inside the payload.
+class AddTaskWindowSpec {
+  const AddTaskWindowSpec(this.width, this.height);
+  final double width;
+  final double height;
+
+  Map<String, Object?> toMap() => {'w': width, 'h': height};
+  static AddTaskWindowSpec? fromMap(Map<String, Object?>? m) {
+    if (m == null) return null;
+    final w = (m['w'] as num?)?.toDouble();
+    final h = (m['h'] as num?)?.toDouble();
+    if (w == null || h == null || w <= 0 || h <= 0) return null;
+    return AddTaskWindowSpec(w, h);
+  }
+}
+
+/// Minimum / maximum bounds for the Add-Task sub-window. Sized to fit
+/// the dialog comfortably on small screens but never larger than a
+/// common 720p viewport. Picked to keep the dialog readable on both
+/// a 1366×768 laptop and a 4K monitor without dominating either.
+const double _kSubMinW = 460;
+const double _kSubMinH = 360;
+const double _kSubMaxW = 720;
+const double _kSubMaxH = 640;
+const double _kSubDefaultW = 560;
+const double _kSubDefaultH = 460;
+
+/// Width/height as a fraction of the main window. Tuned so the dialog
+/// reads as a centred overlay, not a full takeover.
+const double _kSubRatioW = 0.60;
+const double _kSubRatioH = 0.55;
+
+/// Compute a sub-window size for the given main window [w]×[h] (or
+/// defaults if either dimension is missing). The result always lies
+/// within `[_kSubMinW, _kSubMaxW] × [_kSubMinH, _kSubMaxH]`.
+double _clampSize(double v, double minV, double maxV) =>
+    v < minV ? minV : (v > maxV ? maxV : v);
+
+({double w, double h}) computeAddTaskSubWindowSize({
+  required double? mainW,
+  required double? mainH,
+}) {
+  if (mainW == null || mainH == null || mainW <= 0 || mainH <= 0) {
+    return (w: _kSubDefaultW, h: _kSubDefaultH);
+  }
+  final w = _clampSize(mainW * _kSubRatioW, _kSubMinW, _kSubMaxW);
+  final h = _clampSize(mainH * _kSubRatioH, _kSubMinH, _kSubMaxH);
+  return (w: w, h: h);
+}
+
+/// Read the main app's current window bounds. Best-effort: returns null
+/// on any failure (window_manager not initialised, hidden, headless
+/// tests). The sub-window spawner falls back to a default size.
+Future<({double? w, double? h})> _readMainWindowSize() async {
+  try {
+    final rect = await windowManager.getBounds();
+    return (w: rect.width, h: rect.height);
+  } catch (_) {
+    return (w: null, h: null);
+  }
+}
 Future<void> ipcLog(String line) async {
   try {
     final appData = Platform.environment['APPDATA'];
@@ -69,8 +126,13 @@ const String kAddTaskResultMethod = 'velocita.add_task.result';
 /// What the main app hands to the sub-window via
 /// `DesktopMultiWindow.createWindow(arguments)`.
 class AddTaskPayload {
-  const AddTaskPayload({required this.request});
+  const AddTaskPayload({required this.request, this.window});
   final AddRequest request;
+
+  /// Computed at spawn time from the main window's bounds. Read by the
+  /// sub-window's main() to size the OS window before showing it.
+  /// `null` means "use a sensible default".
+  final AddTaskWindowSpec? window;
 
   /// Encode as a single string (the C++ side joins it back to
   /// argv[2] on the sub-window side).
@@ -84,6 +146,7 @@ class AddTaskPayload {
         if (request.requestHeaders != null)
           'requestHeaders': request.requestHeaders,
         if (request.dedupKey != null) 'dedupKey': request.dedupKey,
+        if (window != null) 'window': window!.toMap(),
       });
 
   /// Decode from the JSON the C++ side hands the sub-window's
@@ -111,7 +174,12 @@ class AddTaskPayload {
     // — assign after construction.
     final dk = json['dedupKey'] as String?;
     if (dk != null && dk.isNotEmpty) r.dedupKey = dk;
-    return AddTaskPayload(request: r);
+    return AddTaskPayload(
+      request: r,
+      window: AddTaskWindowSpec.fromMap(
+        (json['window'] as Map?)?.cast<String, Object?>(),
+      ),
+    );
   }
 }
 
@@ -181,8 +249,20 @@ class AddTaskResult {
 ///
 /// The main app may be hidden in the tray at this point — the
 /// sub-window is independent and self-contained.
+///
+/// Size: computed from the main window's current bounds (a fraction
+/// clamped to sane min/max), and handed to the sub-window via the
+/// payload so the OS window opens at the right size on the first
+/// frame instead of growing into place.
 Future<void> spawnAddTaskSubWindow(AddRequest request) async {
-  final payload = AddTaskPayload(request: request).encode();
+  final main = await _readMainWindowSize();
+  final size = computeAddTaskSubWindowSize(mainW: main.w, mainH: main.h);
+  await ipcLog('spawnAddTaskSubWindow: main=${main.w}x${main.h} '
+      'sub=${size.w.toStringAsFixed(0)}x${size.h.toStringAsFixed(0)}');
+  final payload = AddTaskPayload(
+    request: request,
+    window: AddTaskWindowSpec(size.w, size.h),
+  ).encode();
   await DesktopMultiWindow.createWindow(
     '$kAddTaskChannel $payload',
   );

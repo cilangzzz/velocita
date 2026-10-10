@@ -157,6 +157,7 @@ class _PendingAddRequestListenerState
       await ref.read(taskListProvider.notifier).addUri(
             r.url,
             aria2Options: _toAria2Options(r),
+            displayName: r.tabTitle,
           );
     } catch (e) {
       _showSnack('Failed to add: $e');
@@ -189,14 +190,18 @@ class _PendingAddRequestListenerState
     final notifier = ref.read(taskListProvider.notifier);
     // Replay the original request's headers (referer/cookie/UA) so
     // restricted CDNs work on the confirmation-popup path too — the
-    // auto-add path already does this.
+    // auto-add path already does this. tabTitle doubles as the
+    // display name for HLS jobs (meaningful merged filename).
     final aria2Options =
         _inFlight != null ? _toAria2Options(_inFlight!) : null;
+    final displayName = _inFlight?.tabTitle;
     try {
       switch (r.kind) {
         case SubmitKind.url:
           await notifier.addUri(r.url!,
-              saveDir: r.saveDir, aria2Options: aria2Options);
+              saveDir: r.saveDir,
+              aria2Options: aria2Options,
+              displayName: displayName);
         case SubmitKind.magnet:
           await notifier.addMagnet(r.magnet!,
               saveDir: r.saveDir, aria2Options: aria2Options);
@@ -215,6 +220,14 @@ class _PendingAddRequestListenerState
     final m = <String, Object?>{};
     if (r.referer != null && r.referer!.isNotEmpty) {
       m['referer'] = r.referer;
+    }
+    final suggested = r.suggestedFilename?.trim();
+    if (suggested != null && suggested.isNotEmpty) {
+      // aria2 `out` is a filename relative to `dir`, never a path —
+      // strip anything that smells like one (defense in depth; the
+      // extension already sends a basename).
+      final base = suggested.replaceAll(RegExp(r'^.*[\\/]'), '');
+      if (base.isNotEmpty) m['out'] = base;
     }
     final headers = <String>[];
     if (r.cookieHeader != null && r.cookieHeader!.isNotEmpty) {

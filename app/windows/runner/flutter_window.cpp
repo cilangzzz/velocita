@@ -71,6 +71,30 @@ bool FlutterWindow::OnCreate() {
         registry->GetRegistrarForPlugin("WindowManagerPlugin"));
     ScreenRetrieverPluginRegisterWithRegistrar(
         registry->GetRegistrarForPlugin("ScreenRetrieverPlugin"));
+
+    // Strip the OS title bar / frame. desktop_multi_window's own
+    // flutter_window.cc (in the plugin) creates the sub-window with
+    // WS_OVERLAPPEDWINDOW (caption + frame + min/max/close boxes).
+    // For the Add-Task sub-window we want a borderless popup so the
+    // Dart-rendered custom title bar (_SubWindowTitleBar) is the
+    // only chrome. We swap to WS_POPUP and apply with SWP_FRAMECHANGED
+    // so DWM recomposes. windowManager.startDragging() still works
+    // because it posts WM_NCLBUTTONDOWN + HTCAPTION, which the OS
+    // honours for window-moving regardless of the WS_CAPTION bit.
+    auto view = flutter_view_controller->view()->GetNativeWindow();
+    if (view) {
+      HWND root = GetAncestor(view, GA_ROOT);
+      if (root) {
+        LONG style = ::GetWindowLong(root, GWL_STYLE);
+        style &= ~WS_OVERLAPPEDWINDOW;
+        style |= WS_POPUP;
+        ::SetWindowLong(root, GWL_STYLE, style);
+        ::SetWindowPos(
+            root, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                SWP_FRAMECHANGED);
+      }
+    }
   });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());

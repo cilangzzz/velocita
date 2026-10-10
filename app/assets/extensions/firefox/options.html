@@ -53,6 +53,26 @@
       Velocita "show confirmation" toggle in the desktop app.
     </div>
 
+    <h2 style="font-size: 14px; margin: 24px 0 4px;">Header injection</h2>
+    <div class="hint" style="margin-bottom: 8px;">
+      Choose which headers the extension attaches to every send-to-aria2
+      download. Useful for restricted / hotlink-protected CDNs that
+      reject the aria2 default User-Agent or require login cookies.
+      Disable to revert to the bare URL request.
+    </div>
+    <div class="row">
+      <input type="checkbox" id="injCookies" />
+      <label for="injCookies">Inject <code>Cookie:</code> from this site</label>
+    </div>
+    <div class="row">
+      <input type="checkbox" id="injUA" />
+      <label for="injUA">Inject browser's <code>User-Agent</code></label>
+    </div>
+    <div class="row">
+      <input type="checkbox" id="injReferer" />
+      <label for="injReferer">Inject <code>Referer</code> (current page URL)</label>
+    </div>
+
     <button id="save">Save</button>
     <span class="hint" id="status"></span>
 

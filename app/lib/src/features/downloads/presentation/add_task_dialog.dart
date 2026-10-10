@@ -7,6 +7,7 @@ import 'package:velocita_kernel/velocita_kernel.dart';
 
 import '../../../localization/app_localizations.dart';
 import '../../../features/categories/categories.dart';
+import '../../../theme/radii.dart';
 import '../data/downloads_repository.dart';
 
 /// Tabbed dialog for adding a new download: URL / Magnet / Torrent.
@@ -30,6 +31,7 @@ class AddTaskDialog extends ConsumerStatefulWidget {
     this.categoryId,
     this.initialUrl,
     this.onResult,
+    this.titleBar,
   });
 
   /// Optional id of the currently selected sidebar category.
@@ -48,6 +50,13 @@ class AddTaskDialog extends ConsumerStatefulWidget {
   /// to receive the result and IPC it back to the main app. The
   /// main-app `showDialog` path ignores this callback.
   final void Function(SubmitResult)? onResult;
+
+  /// Optional custom widget to render in the dialog's title slot.
+  /// When provided, the default text title is replaced and the
+  /// dialog's `titlePadding` is collapsed to zero so the widget
+  /// spans the full dialog width (used by the Add-Task sub-window
+  /// to render its borderless title bar with min/max/close).
+  final Widget? titleBar;
 
   @override
   ConsumerState<AddTaskDialog> createState() => _AddTaskDialogState();
@@ -276,16 +285,26 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
     _recomputePreview();
     final l = AppLocalizations.of(context);
     return AlertDialog(
+      // Tighter corner radius than the M3 default (28px) — the
+      // dialog is the primary surface for power users, so a more
+      // rectangular look fits better with the rest of the app.
+      shape: RoundedRectangleBorder(
+        borderRadius: Radii.brLg,
+      ),
       // Dialog-level margin: gives the content breathing room from the
       // dialog's own padding.
       insetPadding: const EdgeInsets.symmetric(
         horizontal: 24,
         vertical: 24,
       ),
-      title: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(l.addDownloadTask),
-      ),
+      titlePadding: widget.titleBar != null
+          ? EdgeInsets.zero
+          : null,
+      title: widget.titleBar ??
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(l.addDownloadTask),
+          ),
       content: Container(
         // Outer margin around the dialog body so the title, tabs,
         // and bottom action buttons don't feel cramped against the

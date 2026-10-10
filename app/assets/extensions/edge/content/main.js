@@ -249,7 +249,7 @@ function showQualityMenu(media, btn, variants) {
   Object.assign(menu.style, {
     position: "absolute",
     zIndex: "2147483647",
-    minWidth: "148px",
+    minWidth: "220px",
     background: "rgba(20,20,22,0.94)",
     borderRadius: "8px",
     padding: "4px",
@@ -293,9 +293,35 @@ function showQualityMenu(media, btn, variants) {
       cursor: "pointer",
       borderRadius: "4px",
     });
+    // Two-line item: main label (e.g. "1080p60") over the detail line
+    // ("1920×1080 · 4221 kbps · H.264") — mirrors what IDM shows, so
+    // same-resolution variants at different bitrates stay distinguishable.
+    const left = document.createElement("span");
+    Object.assign(left.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "1px",
+      minWidth: "0",
+    });
     const labelSpan = document.createElement("span");
     labelSpan.textContent = v.label || `Variant ${idx + 1}`;
-    item.appendChild(labelSpan);
+    Object.assign(labelSpan.style, {
+      fontSize: "13px",
+      fontWeight: "500",
+      whiteSpace: "nowrap",
+    });
+    left.appendChild(labelSpan);
+    if (v.detail) {
+      const detailSpan = document.createElement("span");
+      detailSpan.textContent = v.detail;
+      Object.assign(detailSpan.style, {
+        fontSize: "10px",
+        color: "rgba(255,255,255,0.55)",
+        whiteSpace: "nowrap",
+      });
+      left.appendChild(detailSpan);
+    }
+    item.appendChild(left);
     if (idx === 0) {
       const best = document.createElement("span");
       best.textContent = "Best";
@@ -332,7 +358,7 @@ function showQualityMenu(media, btn, variants) {
   // Position the menu just below the pill, right-aligned.
   const pillRect = btn.getBoundingClientRect();
   const top = pillRect.bottom + window.scrollY + 6;
-  const left = pillRect.right + window.scrollX - 148;
+  const left = pillRect.right + window.scrollX - 220;
   menu.style.top = `${top}px`;
   menu.style.left = `${Math.max(left, window.scrollX + 4)}px`;
 

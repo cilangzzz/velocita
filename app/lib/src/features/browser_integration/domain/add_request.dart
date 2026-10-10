@@ -30,6 +30,7 @@ class AddRequest {
     this.tabTitle,
     this.cookieHeader,
     this.requestHeaders,
+    this.suggestedFilename,
   });
 
   final String url;
@@ -43,8 +44,15 @@ class AddRequest {
   final String? cookieHeader;
 
   /// Pre-shaped aria2 `header` array entries. Each string is `"Name: value"`.
+  /// Typically carries `Cookie:` and the browser's `User-Agent:` so the
+  /// replayed request authenticates like the original page load did.
   /// `null` when not applicable.
   final List<String>? requestHeaders;
+
+  /// Filename the browser determined for this download (basename only).
+  /// Mapped to aria2's `out` option so intercepted downloads land under
+  /// the name the browser picked. `null` when unknown.
+  final String? suggestedFilename;
 
   /// Extension-generated dedup hint. When two requests with the same key
   /// arrive within [dedupWindow], the second one is silently dropped.

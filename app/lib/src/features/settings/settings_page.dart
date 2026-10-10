@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../localization/app_localizations.dart';
 import '../../localization/locale_provider.dart';
+import '../../theme/radii.dart';
 import '../../theme/theme_provider.dart';
 import '../browser_integration/browser_integration.dart';
 import 'data/download_settings_provider.dart';
@@ -72,18 +73,40 @@ class SettingsPage extends ConsumerWidget {
               subtitle: Text(
                 locale.languageCode == 'zh' ? l.langChinese : l.langEnglish,
               ),
-              trailing: DropdownButton<String>(
-                value: locale.languageCode,
-                items: [
-                  DropdownMenuItem(value: 'en', child: Text(l.langEnglish)),
-                  DropdownMenuItem(value: 'zh', child: Text(l.langChinese)),
-                ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  ref.read(localeProvider.notifier).setLocale(
-                        v == 'zh' ? const Locale('zh', 'CN') : Locale(v),
-                      );
-                },
+              // The classic DropdownButton opens a Material menu that
+              // defaults to a square shape and a generic grey/surface
+              // fill that fights the card's `surfaceContainerLow`. Wrap
+              // it to:
+              //   * drop the underline so the trailing widget sits flat
+              //     against the card (otherwise the box draws a thin
+              //     accent line that looks like a missing affordance)
+              //   * round the popup 12 dp
+              //   * recolour the popup to the M3 elevated-menu family
+              //     (surfaceContainerHigh) so it matches the surrounding
+              //     container tones and the item highlight reads cleanly
+              //   * restyle the item text to use the theme's bodyMedium +
+              //     onSurface so it doesn't inherit the dropdown's
+              //     per-widget `style` accent color.
+              trailing: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: locale.languageCode,
+                  borderRadius: Radii.brLg,
+                  dropdownColor:
+                      Theme.of(context).colorScheme.surfaceContainerHigh,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                  items: [
+                    DropdownMenuItem(value: 'en', child: Text(l.langEnglish)),
+                    DropdownMenuItem(value: 'zh', child: Text(l.langChinese)),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    ref.read(localeProvider.notifier).setLocale(
+                          v == 'zh' ? const Locale('zh', 'CN') : Locale(v),
+                        );
+                  },
+                ),
               ),
             ),
           ],
@@ -468,7 +491,7 @@ class _SaveDirError extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: Radii.brMd,
       ),
       child: Text(
         message,

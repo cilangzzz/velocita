@@ -20,6 +20,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../downloads/data/downloads_repository.dart';
 import '../../downloads/presentation/add_task_dialog.dart';
+import '../../../localization/app_localizations.dart';
 import '../data/window_bridge.dart';
 
 void addTaskSubWindowMain(List<String> args) {
@@ -134,6 +135,26 @@ class _SubWindowHostState extends State<_SubWindowHost> {
     if (_started) return;
     _started = true;
 
+    // 0. Size the OS window from the main-window-derived spec BEFORE
+    //    showing it. Without this, the sub-window appears at the
+    //    platform default size, then snaps to the desired one — a
+    //    visible jump that confuses users on hi-DPI / non-uniform
+    //    DPI multi-monitor setups. window_manager is registered for
+    //    the sub-window's engine (see windows/runner/flutter_window.cpp).
+    if (widget.payload.window != null) {
+      try {
+        final s = widget.payload.window!;
+        await windowManager.setSize(Size(s.width, s.height));
+        await ipcLog(
+          'sub-window: setSize '
+          '${s.width.toStringAsFixed(0)}x${s.height.toStringAsFixed(0)}',
+        );
+      } catch (e) {
+        await ipcLog('sub-window: setSize failed: $e');
+        debugPrint('sub-window: setSize failed: ' + e.toString());
+      }
+    }
+
     // 1. Make the OS window visible (0.2.x creates it as SW_HIDE).
     try {
       await WindowController.fromWindowId(widget.subWindowId).show();
@@ -141,11 +162,23 @@ class _SubWindowHostState extends State<_SubWindowHost> {
       debugPrint('sub-window show failed: ' + e.toString());
     }
 
-    // 2. Pin it on top so it isn't buried behind other windows.
+    // 2. Size + center the now-borderless sub-window so the dialog
+    // (intrinsic ~528px wide) fits with breathing room, and the
+    // window appears in the middle of the primary monitor instead
+    // of desktop_multi_window's default (10, 10). The C++ callback
+    // (windows/runner/flutter_window.cpp) has already stripped the
+    // OS title bar via SetWindowLong(WS_POPUP).
+    try {
+      await windowManager.setSize(const Size(620, 480));
+      await windowManager.center();
+    } catch (e) {
+      debugPrint('sub-window size/center failed: ' + e.toString());
+    }
+
+    // 3. Pin it on top so it isn't buried behind other windows.
     // `window_manager` is registered for the sub-window's engine
-    // via `DesktopMultiWindowSetWindowCreatedCallback` (see
-    // windows/runner/flutter_window.cpp), so `setAlwaysOnTop`
-    // targets this window.
+    // via `DesktopMultiWindowSetWindowCreatedCallback`, so
+    // `setAlwaysOnTop` targets this window.
     try {
       await windowManager.ensureInitialized();
       await windowManager.setAlwaysOnTop(true);
@@ -155,22 +188,27 @@ class _SubWindowHostState extends State<_SubWindowHost> {
 
     if (!mounted) return;
 
-    // 3. Show the real dialog. AddTaskDialog's internal
-    // `Navigator.pop(result)` resolves this future normally.
+    // 4. Show the real dialog with a custom borderless title bar.
+    // AddTaskDialog renders the titleBar widget as its AlertDialog
+    // `title` (with titlePadding: EdgeInsets.zero), and uses a
+    // tighter 8px corner radius (set on the dialog's shape).
     final result = await showDialog<SubmitResult>(
       context: context,
       barrierDismissible: true,
       builder: (_) => AddTaskDialog(
         initialUrl: widget.payload.request.url,
+        titleBar: _SubWindowTitleBar(
+          title: AppLocalizations.of(context).addDownloadTask,
+        ),
       ),
     );
 
-    // 4. Restore normal z-order.
+    // 5. Restore normal z-order.
     try {
       await windowManager.setAlwaysOnTop(false);
     } catch (_) {}
 
-    // 5. Report the result back to the main app. The timeout guards
+    // 6. Report the result back to the main app. The timeout guards
     // against a future regression where invokeMethod hangs (e.g. the
     // native channel handler being overwritten) — without it the
     // sub-window would stay open forever and the task would never be
@@ -196,7 +234,7 @@ class _SubWindowHostState extends State<_SubWindowHost> {
       debugPrint('sub-window: invokeMethod failed: ' + e.toString());
     }
 
-    // 6. Close this sub-window.
+    // 7. Close this sub-window.
     try {
       await WindowController.fromWindowId(widget.subWindowId).close();
     } catch (e) {
@@ -223,4 +261,117 @@ class _StubDownloadsRepository extends DownloadsRepository {
   _StubDownloadsRepository() : super(Aria2RpcClient(secret: ''));
   @override
   String? get defaultSaveDir => '';
+}
+
+/// Custom borderless title bar rendered as the AddTaskDialog's `title`
+/// slot. Replaces the OS title bar (stripped via SetWindowLong in the
+/// C++ callback) with our own drag area + min/max/close controls.
+///
+/// The drag area calls `windowManager.startDragging()` which posts
+/// WM_NCLBUTTONDOWN + HTCAPTION — the OS treats this as a move request
+/// regardless of the WS_POPUP style. Double-click on the drag area
+/// toggles maximize.
+class _SubWindowTitleBar extends StatefulWidget {
+  const _SubWindowTitleBar({required this.title});
+  final String title;
+
+  @override
+  State<_SubWindowTitleBar> createState() => _SubWindowTitleBarState();
+}
+
+class _SubWindowTitleBarState extends State<_SubWindowTitleBar> {
+  bool _maximized = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Material(
+      // Subtle distinction from the dialog body so the bar reads as a
+      // separate drag region.
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: SizedBox(
+        height: 36,
+        child: Row(
+          children: [
+            // Drag area — expanded to take all remaining space, holds
+            // the title text on the left. onPanStart is the canonical
+            // way to start a window drag on Windows; onDoubleTap
+            // toggles maximize, matching native title-bar behaviour.
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (_) => windowManager.startDragging(),
+                onDoubleTap: _toggleMax,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      widget.title,
+                      style: theme.textTheme.bodyMedium,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            _WindowButton(
+              tooltip: l.windowMinimize,
+              icon: Icons.remove,
+              onPressed: () => windowManager.minimize(),
+            ),
+            _WindowButton(
+              tooltip: _maximized ? l.windowRestore : l.windowMaximize,
+              icon: _maximized ? Icons.filter_none : Icons.crop_square,
+              onPressed: _toggleMax,
+            ),
+            _WindowButton(
+              tooltip: l.windowClose,
+              icon: Icons.close,
+              onPressed: () => windowManager.close(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _toggleMax() async {
+    // The window is borderless (WS_POPUP) with no native min/max
+    // boxes, so the only path that flips the state is this button —
+    // we can toggle optimistically without consulting the engine.
+    if (_maximized) {
+      await windowManager.unmaximize();
+    } else {
+      await windowManager.maximize();
+    }
+    if (mounted) setState(() => _maximized = !_maximized);
+  }
+}
+
+/// Square 36x36 icon button used in the title bar.
+class _WindowButton extends StatelessWidget {
+  const _WindowButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: IconButton(
+        tooltip: tooltip,
+        icon: Icon(icon, size: 16),
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+      ),
+    );
+  }
 }

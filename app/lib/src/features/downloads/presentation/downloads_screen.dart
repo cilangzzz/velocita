@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../features/categories/categories.dart';
@@ -8,6 +9,7 @@ import '../../../features/categories/presentation/category_tree.dart';
 import '../../../features/hls/hls.dart';
 import '../../../kernel_bridge/kernel_provider.dart';
 import '../../../localization/app_localizations.dart';
+import '../../../theme/radii.dart';
 import '../domain/download_task.dart';
 import 'add_task_dialog.dart';
 import 'columns_dialog.dart';
@@ -113,20 +115,39 @@ class _Toolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l = AppLocalizations.of(context);
     final filter = ref.watch(taskFilterProvider);
+    final categoryId = ref.watch(selectedCategoryProvider);
+    final cats = ref.watch(categoriesProvider).valueOrNull?.categories ??
+        const <Category>[];
+
+    // The status-filter counts are scoped to the currently-selected
+    // category so they match what the table would show for each filter
+    // value. Without scoping, the dropdown says e.g. "Active 12" while
+    // the table (which already filters by category) only shows 3 — the
+    // counts and the rows drift. When no category is selected the
+    // counts are global (the previous behaviour).
+    final taskList = tasks.values.toList(growable: false);
+    final scopedTasks =
+        applyCategoryFilter(taskList, categoryId, cats);
     final counts = <DownloadFilter, int>{
-      DownloadFilter.all: tasks.length,
-      DownloadFilter.active: tasks.values.where((t) => t.isActive).length,
-      DownloadFilter.paused: tasks.values.where((t) => t.isPaused).length,
-      DownloadFilter.completed: tasks.values.where((t) => t.isComplete).length,
-      DownloadFilter.error: tasks.values.where((t) => t.isError).length,
+      DownloadFilter.all: scopedTasks.length,
+      DownloadFilter.active: scopedTasks.where((t) => t.isActive).length,
+      DownloadFilter.paused: scopedTasks.where((t) => t.isPaused).length,
+      DownloadFilter.completed: scopedTasks.where((t) => t.isComplete).length,
+      DownloadFilter.error: scopedTasks.where((t) => t.isError).length,
     };
 
-    final taskList = tasks.values.toList(growable: false);
-    final cats = ref
-            .watch(categoriesProvider)
-            .valueOrNull
-            ?.categories ??
-        const <Category>[];
+    // A short label for the active category scope, used both to
+    // disambiguate the "X tasks" counter and as a visual cue that the
+    // counts above are category-scoped. `null` when no filter is on.
+    final scopeLabel = switch (categoryId) {
+      null => null,
+      '__none__' => l.uncategorized,
+      _ => categoryById(cats, categoryId)?.name,
+    };
+    final scopedCountLabel = scopeLabel == null
+        ? '${scopedTasks.length} task${scopedTasks.length == 1 ? '' : 's'}'
+        : '${scopedTasks.length} in $scopeLabel';
+
     final selectedIds = ref.watch(selectedTaskGidsProvider);
     final selectedCount = selectedIds.length;
     final selectedTasks = [
@@ -151,40 +172,11 @@ class _Toolbar extends ConsumerWidget {
               icon: const Icon(Icons.view_column),
             ),
             const SizedBox(width: 4),
-            // Status filter dropdown (lives in toolbar, not sidebar).
-            DropdownButton<DownloadFilter>(
+            // Status filter — themed rounded dropdown (not the native
+            // sharp DropdownButton). Counts are recomputed inside.
+            _StatusFilterDropdown(
               value: filter,
-              items: [
-                for (final f in DownloadFilter.values)
-                  DropdownMenuItem(
-                    value: f,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(_filterIcon(f), size: 16),
-                        const SizedBox(width: 8),
-                        Text(_filterLabel(f, l)),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${counts[f]}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-              onChanged: (v) {
-                if (v != null) {
-                  ref.read(taskFilterProvider.notifier).state = v;
-                }
-              },
+              counts: counts,
             ),
             const SizedBox(width: 4),
             IconButton(
@@ -203,9 +195,14 @@ class _Toolbar extends ConsumerWidget {
                     ?.copyWith(color: Theme.of(context).colorScheme.primary),
               )
             else
-              Text(
-                '${tasks.length} task${tasks.length == 1 ? '' : 's'}',
-                style: Theme.of(context).textTheme.bodyMedium,
+              Tooltip(
+                message: scopeLabel == null
+                    ? l.allDownloads
+                    : '${l.allDownloads} · $scopeLabel',
+                child: Text(
+                  scopedCountLabel,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
               ),
           ];
           final right = <Widget>[
@@ -267,36 +264,6 @@ class _Toolbar extends ConsumerWidget {
         },
       ),
     );
-  }
-
-  IconData _filterIcon(DownloadFilter f) {
-    switch (f) {
-      case DownloadFilter.all:
-        return Icons.list_alt;
-      case DownloadFilter.active:
-        return Icons.download_outlined;
-      case DownloadFilter.paused:
-        return Icons.pause_circle_outline;
-      case DownloadFilter.completed:
-        return Icons.check_circle_outline;
-      case DownloadFilter.error:
-        return Icons.error_outline;
-    }
-  }
-
-  String _filterLabel(DownloadFilter f, AppLocalizations l) {
-    switch (f) {
-      case DownloadFilter.all:
-        return l.all;
-      case DownloadFilter.active:
-        return l.active;
-      case DownloadFilter.paused:
-        return l.paused;
-      case DownloadFilter.completed:
-        return l.completed;
-      case DownloadFilter.error:
-        return l.error;
-    }
   }
 
   Future<void> _openAddDialog(BuildContext context, WidgetRef ref) async {
@@ -726,16 +693,30 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
   ) async {
     final l = AppLocalizations.of(context);
     final notifier = ref.read(taskListProvider.notifier);
+    // Synthetic HLS rows have no aria2 gid — pause/resume don't apply.
+    // Removing the row cancels the job (handled by the notifier).
+    final isHlsRow = TaskListNotifier.isHlsSyntheticGid(t.gid);
+    final source = t.sourceUrl;
+    final hasSource = source != null && source.isNotEmpty;
+    final isMagnet = hasSource && source.startsWith('magnet:');
     final items = <PopupMenuEntry<String>>[
-      if (t.isActive)
+      if (!isHlsRow && t.isActive)
         PopupMenuItem(
           value: 'pause',
           child: _MenuItem(icon: Icons.pause, label: l.pauseTask),
         ),
-      if (t.isPaused)
+      if (!isHlsRow && t.isPaused)
         PopupMenuItem(
           value: 'resume',
           child: _MenuItem(icon: Icons.play_arrow, label: l.resumeTask),
+        ),
+      if (hasSource)
+        PopupMenuItem(
+          value: 'copyLink',
+          child: _MenuItem(
+            icon: isMagnet ? Icons.link : Icons.link,
+            label: isMagnet ? l.copyMagnet : l.copyLink,
+          ),
         ),
       PopupMenuItem(
         value: 'openFolder',
@@ -760,6 +741,15 @@ class _DownloadsTableState extends ConsumerState<_DownloadsTable> {
         await notifier.pause(t.gid);
       case 'resume':
         await notifier.resume(t.gid);
+      case 'copyLink':
+        await Clipboard.setData(ClipboardData(text: source!));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l.copiedToClipboard),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       case 'openFolder':
         await _openFolder(t);
       case 'remove':
@@ -1243,8 +1233,11 @@ enum _BatchAction {
 Widget _dataCellFor(ColumnSpec spec, TaskSummary t) {
   switch (spec.id) {
     case ColumnId.filename:
+      // The notifier pre-fills a sensible name at add time, so a
+      // genuinely empty filename should be rare. Fall back to
+      // "(unnamed)" rather than showing a blank cell.
       return Text(
-        t.filename,
+        t.filename.isNotEmpty ? t.filename : '(unnamed)',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         softWrap: false,
@@ -1313,5 +1306,251 @@ String _labelFor(AppLocalizations l, ColumnId id) {
       return l.columnSize;
     case ColumnId.added:
       return l.columnAdded;
+  }
+}
+
+// ── Status filter dropdown ─────────────────────────────────────
+
+IconData _filterIcon(DownloadFilter f) {
+  switch (f) {
+    case DownloadFilter.all:
+      return Icons.list_alt;
+    case DownloadFilter.active:
+      return Icons.download_outlined;
+    case DownloadFilter.paused:
+      return Icons.pause_circle_outline;
+    case DownloadFilter.completed:
+      return Icons.check_circle_outline;
+    case DownloadFilter.error:
+      return Icons.error_outline;
+  }
+}
+
+String _filterLabel(DownloadFilter f, AppLocalizations l) {
+  switch (f) {
+    case DownloadFilter.all:
+      return l.all;
+    case DownloadFilter.active:
+      return l.active;
+    case DownloadFilter.paused:
+      return l.paused;
+    case DownloadFilter.completed:
+      return l.completed;
+    case DownloadFilter.error:
+      return l.error;
+  }
+}
+
+/// One item rendered inside the themed dropdown.
+class _DropdownEntry<T> {
+  const _DropdownEntry({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.trailing,
+  });
+  final T value;
+  final String label;
+  final IconData icon;
+  final String trailing;
+}
+
+/// Themed rounded dropdown that replaces Material's default sharp
+/// `DropdownButton`. Background matches the toolbar's surface tint,
+/// border is rounded, and the popup inherits the app's menu theme.
+class _ThemedDropdown<T> extends StatefulWidget {
+  const _ThemedDropdown({
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final T value;
+  final List<_DropdownEntry<T>> items;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  State<_ThemedDropdown<T>> createState() => _ThemedDropdownState<T>();
+}
+
+class _ThemedDropdownState<T> extends State<_ThemedDropdown<T>> {
+  final GlobalKey _buttonKey = GlobalKey();
+  final GlobalKey<OverlayState> _overlayKey =
+      GlobalKey(debugLabel: '_ThemedDropdownOverlay');
+
+  /// Find the OverlayState in the closest [Overlay]. Falls back to the
+  /// root Overlay when none is found.
+  OverlayState _overlayFor(BuildContext context) {
+    return Overlay.maybeOf(context, rootOverlay: true) ??
+        _overlayKey.currentState ??
+        Overlay.of(context, rootOverlay: true);
+  }
+
+  Future<void> _open() async {
+    final overlay = _overlayFor(context);
+    final renderBox =
+        _buttonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final selected = widget.value;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final items = widget.items
+        .map((e) => PopupMenuItem<T>(
+              value: e.value,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    e.icon,
+                    size: 18,
+                    color: e.value == selected
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    e.label,
+                    style: TextStyle(
+                      fontWeight: e.value == selected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: e.value == selected
+                          ? scheme.primary
+                          : scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    e.trailing,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (e.value == selected) ...[
+                    const SizedBox(width: 8),
+                    Icon(Icons.check, size: 16, color: scheme.primary),
+                  ],
+                ],
+              ),
+            ))
+        .toList();
+
+    final boxWidth = size.width.clamp(140.0, 280.0);
+    // Position the popup below the button, aligned to the right edge so
+    // it grows to the left when the button is near the right side of the
+    // toolbar.
+    final position = RelativeRect.fromLTRB(
+      offset.dx + size.width - boxWidth,
+      offset.dy + size.height + 4,
+      offset.dx + size.width,
+      offset.dy + size.height + 4,
+    );
+
+    final picked = await showMenu<T?>(
+      context: context,
+      position: position,
+      elevation: 6,
+      surfaceTintColor: scheme.surfaceTint,
+      color: scheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: Radii.brLg,
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      items: items,
+    );
+    if (picked != null) widget.onChanged(picked);
+    // Keep this Overlay reference alive for the next open.
+    if (_overlayKey.currentState == null) {
+      // No-op; we only need this if a custom overlay is introduced.
+    }
+    overlay; // referenced to silence unused
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final selected = widget.items.firstWhere(
+      (e) => e.value == widget.value,
+      orElse: () => widget.items.first,
+    );
+    return Material(
+      key: _buttonKey,
+      color: scheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: Radii.brMd,
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: InkWell(
+        borderRadius: Radii.brMd,
+        onTap: _open,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(selected.icon, size: 16, color: scheme.onSurface),
+              const SizedBox(width: 8),
+              Text(
+                selected.label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                selected.trailing,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.arrow_drop_down,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Toolbar-bound filter dropdown — a thin wrapper that wires the
+/// provider to the generic [_ThemedDropdown].
+class _StatusFilterDropdown extends ConsumerWidget {
+  const _StatusFilterDropdown({
+    required this.value,
+    required this.counts,
+  });
+
+  final DownloadFilter value;
+  final Map<DownloadFilter, int> counts;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    return _ThemedDropdown<DownloadFilter>(
+      value: value,
+      items: [
+        for (final f in DownloadFilter.values)
+          _DropdownEntry(
+            value: f,
+            label: _filterLabel(f, l),
+            icon: _filterIcon(f),
+            trailing: '${counts[f] ?? 0}',
+          ),
+      ],
+      onChanged: (v) {
+        if (v != null) {
+          ref.read(taskFilterProvider.notifier).state = v;
+        }
+      },
+    );
   }
 }

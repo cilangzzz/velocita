@@ -23,6 +23,7 @@ class TaskSummary {
     this.errorMessage,
     this.addedAt,
     this.completedAt,
+    this.sourceUrl,
   });
 
   final String gid;
@@ -42,6 +43,13 @@ class TaskSummary {
   /// aria2 reports `completedAt` as epoch seconds. `null` until complete.
   final DateTime? completedAt;
 
+  /// The URL or magnet URI the user originally handed us at add time.
+  /// Set once on the notifier side and never changes — the UI uses it
+  /// for "Copy link" and other actions that need the original source.
+  /// `null` for torrent tasks (no link to copy) and for synthetic HLS
+  /// rows that predate this field.
+  final String? sourceUrl;
+
   double get progress => totalLength > 0 ? completedLength / totalLength : 0;
   bool get isActive => status == DownloadStatus.active;
   bool get isPaused => status == DownloadStatus.paused;
@@ -58,6 +66,7 @@ class TaskSummary {
     String? errorMessage,
     DateTime? addedAt,
     DateTime? completedAt,
+    String? sourceUrl,
   }) {
     return TaskSummary(
       gid: gid,
@@ -71,6 +80,7 @@ class TaskSummary {
       errorMessage: errorMessage ?? this.errorMessage,
       addedAt: addedAt ?? this.addedAt,
       completedAt: completedAt ?? this.completedAt,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
     );
   }
 }
@@ -133,7 +143,11 @@ TaskSummary taskFromAria2(Map<String, Object?> raw) {
     completedLength =
         int.tryParse(raw['completedLength']?.toString() ?? '0') ?? 0;
   }
-  filename = filename.isNotEmpty ? _basename(filename) : '(unnamed)';
+  // Return an empty filename when aria2 hasn't picked a path yet. The
+  // notifier pre-fills a sensible name at add time and preserves it
+  // when merging; the UI layer falls back to "(unnamed)" if it ever
+  // sees an empty value, so failed tasks never show "file (1)".
+  filename = filename.isNotEmpty ? _basename(filename) : '';
 
   // aria2 reports `addedAt` and `completedAt` as epoch seconds.
   // Only `complete` tasks get a non-zero `completedAt`.

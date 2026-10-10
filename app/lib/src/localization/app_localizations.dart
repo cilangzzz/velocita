@@ -33,6 +33,9 @@ class AppLocalizations {
   String get resumeTask => _t(_catalog['resumeTask']!);
   String get openFolder => _t(_catalog['openFolder']!);
   String get removeFromHistory => _t(_catalog['removeFromHistory']!);
+  String get copyLink => _t(_catalog['copyLink']!);
+  String get copyMagnet => _t(_catalog['copyMagnet']!);
+  String get copiedToClipboard => _t(_catalog['copiedToClipboard']!);
   String get refresh => _t(_catalog['refresh']!);
   String get cancel => _t(_catalog['cancel']!);
   String get download => _t(_catalog['download']!);
@@ -249,6 +252,11 @@ class AppLocalizations {
             browser,
           );
 
+  String get windowMinimize => _t(_catalog['windowMinimize']!);
+  String get windowMaximize => _t(_catalog['windowMaximize']!);
+  String get windowRestore => _t(_catalog['windowRestore']!);
+  String get windowClose => _t(_catalog['windowClose']!);
+
   String _t(String key) {
     final tag = locale.countryCode != null
         ? '${locale.languageCode}-${locale.countryCode}'
@@ -272,6 +280,9 @@ const Map<String, Map<String, String>> _strings = {
     'resumeTask': 'Resume',
     'openFolder': 'Open folder',
     'removeFromHistory': 'Remove from history',
+    'copyLink': 'Copy link',
+    'copyMagnet': 'Copy magnet',
+    'copiedToClipboard': 'Copied to clipboard',
     'refresh': 'Refresh',
     'cancel': 'Cancel',
     'download': 'Download',
@@ -472,6 +483,10 @@ const Map<String, Map<String, String>> _strings = {
         'Pick the manifest.json inside velocita/extensions/firefox.',
     'installStepsFirefox4':
         'For permanent install, submit the extension to addons.mozilla.org.',
+    'windowMinimize': 'Minimize',
+    'windowMaximize': 'Maximize',
+    'windowRestore': 'Restore',
+    'windowClose': 'Close',
   },
   'zh-CN': {
     'appTitle': 'Velocita',
@@ -483,6 +498,9 @@ const Map<String, Map<String, String>> _strings = {
     'resumeTask': '继续',
     'openFolder': '打开所在文件夹',
     'removeFromHistory': '从记录中删除',
+    'copyLink': '复制链接',
+    'copyMagnet': '复制磁链',
+    'copiedToClipboard': '已复制到剪贴板',
     'refresh': '刷新',
     'cancel': '取消',
     'download': '下载',
@@ -656,6 +674,10 @@ const Map<String, Map<String, String>> _strings = {
     'installStepsFirefox2': '点击"临时载入附加组件…"。',
     'installStepsFirefox3': '选择 velocita/extensions/firefox 内的 manifest.json。',
     'installStepsFirefox4': '如需永久安装，请提交到 addons.mozilla.org 签名。',
+    'windowMinimize': '最小化',
+    'windowMaximize': '最大化',
+    'windowRestore': '还原',
+    'windowClose': '关闭',
   },
 };
 
@@ -671,6 +693,9 @@ const Map<String, String> _catalog = {
   'resumeTask': 'resumeTask',
   'openFolder': 'openFolder',
   'removeFromHistory': 'removeFromHistory',
+  'copyLink': 'copyLink',
+  'copyMagnet': 'copyMagnet',
+  'copiedToClipboard': 'copiedToClipboard',
   'refresh': 'refresh',
   'cancel': 'cancel',
   'download': 'download',
@@ -841,4 +866,8 @@ const Map<String, String> _catalog = {
   'installStepsFirefox2': 'installStepsFirefox2',
   'installStepsFirefox3': 'installStepsFirefox3',
   'installStepsFirefox4': 'installStepsFirefox4',
+  'windowMinimize': 'windowMinimize',
+  'windowMaximize': 'windowMaximize',
+  'windowRestore': 'windowRestore',
+  'windowClose': 'windowClose',
 };
