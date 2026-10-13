@@ -83,7 +83,7 @@ dart run m3_smoke.dart
 | **M1** | Flutter Desktop app boots, window manager, status bar | `app/lib/main.dart`, `lib/src/app.dart`, `lib/src/common_widgets/status_bar.dart` |
 | **M2** | HTTP download via the kernel, real download verified | `app/lib/src/features/downloads/`, `tools/feat/download_smoke.dart` |
 | **M3** | Magnet URI parsing + addMagnet + addTorrent; sidebar + filters | `packages/velocita_kernel/lib/src/torrent/magnet.dart`, `app/lib/src/features/downloads/presentation/add_task_dialog.dart` |
-| **M4** | i18n (en + zh-CN), Settings / Scheduler / Plugins pages, NavigationBar | `app/lib/src/localization/`, `app/lib/src/features/{settings,scheduler,plugins}/`, `app/lib/src/routing/router.dart` |
+| **M4** | i18n (en + zh-CN), Settings page, NavigationBar | `app/lib/src/localization/`, `app/lib/src/features/settings/`, `app/lib/src/routing/router.dart` |
 | **M5** | Unit tests (8/8 in kernel, 3/3 in app) + docs | `packages/velocita_kernel/test/`, `app/test/`, this README |
 
 ## M5 — what's done vs skipped

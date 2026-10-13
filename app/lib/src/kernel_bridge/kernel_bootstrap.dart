@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:logging/logging.dart';
@@ -8,6 +7,9 @@ import 'package:synchronized/synchronized.dart';
 import 'package:velocita_kernel/velocita_kernel.dart';
 
 import '../features/downloads/data/downloads_repository.dart';
+import '../features/categories/data/category_icon_store.dart';
+import '../persistence/database.dart';
+import '../persistence/json_migration.dart';
 
 /// Bootstrap the kernel singleton.
 ///
@@ -33,6 +35,18 @@ Future<KernelFacade> bootstrapKernel() async {
       ..createSync(recursive: true);
     final downloadDir = downloads ?? Directory('${dataDir.path}/downloads')
       ..createSync(recursive: true);
+
+    // Open the single SQLite store + run the one-time JSON → DB
+    // migration. Done before aria2 spawns so the proxy / no-proxy
+    // values are available on the command line, and before any
+    // provider's `build()` so no race reads an empty DB.
+    final db = await AppDatabase.openAtDefaultPath();
+    await migrateJsonToDb(db, dataDir);
+    // Custom-icon directory lives next to the DB; pre-warm the
+    // cached path so the icon picker can scan it synchronously.
+    await CategoryIconStore.ensureReady();
+    final proxy = await _readProxyFromDb(db);
+    final noProxy = await _readNoProxyFromDb(db);
 
     // Bind a free port then close (we just need the number).
     final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
@@ -72,13 +86,11 @@ Future<KernelFacade> bootstrapKernel() async {
     // If the user persisted a proxy last session, inject it on the
     // command line. We support both HTTP (also pushable via RPC) and
     // SOCKS5 (which aria2 only accepts at process start).
-    final persistedProxy = _loadPersistedProxy(dataDir.path);
-    if (persistedProxy != null && persistedProxy.isNotEmpty) {
-      args.add('--all-proxy=$persistedProxy');
+    if (proxy != null && proxy.isNotEmpty) {
+      args.add('--all-proxy=$proxy');
     }
-    final persistedBypass = _loadPersistedNoProxy(dataDir.path);
-    if (persistedBypass != null && persistedBypass.isNotEmpty) {
-      args.add('--no-proxy=$persistedBypass');
+    if (noProxy != null && noProxy.isNotEmpty) {
+      args.add('--no-proxy=$noProxy');
     }
 
     final pm = Aria2ProcessManager(
@@ -106,7 +118,8 @@ Future<KernelFacade> bootstrapKernel() async {
         rpc,
         defaultSaveDir: downloadDir.path,
       ),
-      proxyUrl: _loadPersistedProxy(dataDir.path),
+      proxyUrl: proxy,
+      appDatabase: db,
     );
     _instance = facade;
     return facade;
@@ -137,48 +150,33 @@ String _randomSecret() {
   return 'velocita-$r';
 }
 
-/// Read the persisted proxy URL from `settings.json` so aria2c can be
-/// started with the correct `--all-proxy` flag. Returns `null` when
-/// the file is missing, corrupt, or the proxy is `off`.
+/// Read the persisted proxy URL from the SQLite settings table so
+/// aria2c can be started with the correct `--all-proxy` flag.
+/// Returns `null` when the proxy is `off`, the host/port are
+/// missing, or the row is corrupt.
 ///
-/// The full URL is reconstructed using the same logic the settings
-/// provider's `apply()` uses, so a settings.json written by the UI is
-/// consumed symmetrically here. aria2c only supports HTTP proxies, so
-/// any persisted SOCKS5 config is silently ignored (the UI prevents
+/// aria2c only supports HTTP proxies through `--all-proxy`; any
+/// persisted SOCKS5 config is silently ignored (the UI prevents
 /// selecting it in the first place).
-String? _loadPersistedProxy(String dataDir) {
-  final file = File('$dataDir/settings.json');
-  if (!file.existsSync()) return null;
-  try {
-    final raw =
-        jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
-    final kind = raw['proxyKind'] as String?;
-    if (kind != 'http') return null;
-    final host = (raw['proxyHost'] as String?)?.trim() ?? '';
-    final port = (raw['proxyPort'] as int?) ?? 0;
-    if (host.isEmpty || port <= 0) return null;
-    final user = (raw['proxyUsername'] as String?)?.trim() ?? '';
-    final pass = (raw['proxyPassword'] as String?) ?? '';
-    final userInfo = user.isEmpty
-        ? ''
-        : (pass.isEmpty ? '$user@' : '$user:$pass@');
-    return 'http://$userInfo$host:$port';
-  } catch (_) {
-    return null;
-  }
+Future<String?> _readProxyFromDb(AppDatabase db) async {
+  final kv = await db.downloadSettingsDao.all();
+  final kind = kv['proxyKind'] ?? 'off';
+  if (kind != 'http') return null;
+  final host = (kv['proxyHost'] ?? '').trim();
+  final port = int.tryParse(kv['proxyPort'] ?? '') ?? 0;
+  if (host.isEmpty || port <= 0) return null;
+  final user = (kv['proxyUsername'] ?? '').trim();
+  final pass = kv['proxyPassword'] ?? '';
+  final userInfo = user.isEmpty
+      ? ''
+      : (pass.isEmpty ? '$user@' : '$user:$pass@');
+  return 'http://$userInfo$host:$port';
 }
 
-String? _loadPersistedNoProxy(String dataDir) {
-  final file = File('$dataDir/settings.json');
-  if (!file.existsSync()) return null;
-  try {
-    final raw =
-        jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
-    final bypass = (raw['proxyBypass'] as String?)?.trim() ?? '';
-    return bypass.isEmpty ? null : bypass;
-  } catch (_) {
-    return null;
-  }
+Future<String?> _readNoProxyFromDb(AppDatabase db) async {
+  final kv = await db.downloadSettingsDao.all();
+  final bypass = (kv['proxyBypass'] ?? '').trim();
+  return bypass.isEmpty ? null : bypass;
 }
 
 /// Thin facade over the kernel objects the UI actually consumes in M2.
@@ -195,6 +193,7 @@ class KernelFacade {
     required this.downloadDir,
     required this.downloadsRepository,
     this.proxyUrl,
+    required this.appDatabase,
   });
 
   final Aria2ProcessManager processManager;
@@ -205,11 +204,16 @@ class KernelFacade {
   final DownloadsRepository downloadsRepository;
 
   /// Persisted HTTP proxy URL (e.g. `http://user:pass@host:port`) read
-  /// from `settings.json` at kernel bootstrap. Used by the HLS
-  /// playlist fetcher so the playlist fetch honours the same proxy
-  /// that aria2c was started with via `--all-proxy`. `null` when no
-  /// proxy is configured.
+  /// from the SQLite settings table at kernel bootstrap. Used by the
+  /// HLS playlist fetcher so the playlist fetch honours the same
+  /// proxy that aria2c was started with via `--all-proxy`. `null`
+  /// when no proxy is configured.
   final String? proxyUrl;
+
+  /// The single SQLite store. Already opened + migrated before
+  /// bootstrap returned. Wired into Riverpod via
+  /// [appDatabaseProvider].
+  final AppDatabase appDatabase;
 }
 
 class KernelFacadeException implements Exception {

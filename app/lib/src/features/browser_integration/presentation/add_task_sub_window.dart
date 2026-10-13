@@ -155,46 +155,69 @@ class _SubWindowHostState extends State<_SubWindowHost> {
       }
     }
 
-    // 1. Make the OS window visible (0.2.x creates it as SW_HIDE).
+    // 1. Bind window_manager to THIS engine's sub-window HWND.
+    // `ensureInitialized` resolves the native HWND via
+    // `GetAncestor(view, GA_ROOT)` on the current engine, and every
+    // later windowManager call (setSize/center/setAlwaysOnTop/
+    // startDragging/minimize/maximize/close) targets that HWND. If
+    // we skipped this and called setSize first, the native side
+    // would see hwnd=0 and silently no-op. Must run before any
+    // other windowManager call.
+    try {
+      await windowManager.ensureInitialized();
+    } catch (e) {
+      debugPrint('ensureInitialized failed: ' + e.toString());
+    }
+
+    // 2. Size the now-borderless sub-window to comfortably contain the
+    // dialog (~528x382 intrinsic) with a small surfaceContainer margin
+    // so the dialog's 8dp rounded corners are visible as a card on
+    // the window's surfaceContainer background (the ColoredBox the
+    // host paints — see build()). The C++ callback has already
+    // stripped the OS title bar via SetWindowLong(WS_POPUP) and
+    // installed a WndProc subclass that re-applies a rounded
+    // SetWindowRgn region on every WM_WINDOWPOSCHANGED (resize,
+    // show, maximize, restore) — so we do not need to call it from
+    // here, the region is kept correct automatically.
+    try {
+      await windowManager.setSize(const Size(560, 440));
+      await windowManager.center();
+    } catch (e) {
+      debugPrint('sub-window size/center failed: ' + e.toString());
+    }
+    // 3. Pin it on top so it isn't buried behind other windows.
+    try {
+      await windowManager.setAlwaysOnTop(true);
+    } catch (e) {
+      debugPrint('setAlwaysOnTop failed: ' + e.toString());
+    }
+
+    // 4. Reveal the window. Sized, centered, rounded, and
+    // always-on-top are all in place by this point, so the user
+    // sees the final state on the first frame.
     try {
       await WindowController.fromWindowId(widget.subWindowId).show();
     } catch (e) {
       debugPrint('sub-window show failed: ' + e.toString());
     }
 
-    // 2. Size + center the now-borderless sub-window so the dialog
-    // (intrinsic ~528px wide) fits with breathing room, and the
-    // window appears in the middle of the primary monitor instead
-    // of desktop_multi_window's default (10, 10). The C++ callback
-    // (windows/runner/flutter_window.cpp) has already stripped the
-    // OS title bar via SetWindowLong(WS_POPUP).
-    try {
-      await windowManager.setSize(const Size(620, 480));
-      await windowManager.center();
-    } catch (e) {
-      debugPrint('sub-window size/center failed: ' + e.toString());
-    }
-
-    // 3. Pin it on top so it isn't buried behind other windows.
-    // `window_manager` is registered for the sub-window's engine
-    // via `DesktopMultiWindowSetWindowCreatedCallback`, so
-    // `setAlwaysOnTop` targets this window.
-    try {
-      await windowManager.ensureInitialized();
-      await windowManager.setAlwaysOnTop(true);
-    } catch (e) {
-      debugPrint('setAlwaysOnTop failed: ' + e.toString());
-    }
-
     if (!mounted) return;
 
-    // 4. Show the real dialog with a custom borderless title bar.
+    // 5. Show the real dialog with a custom borderless title bar.
     // AddTaskDialog renders the titleBar widget as its AlertDialog
     // `title` (with titlePadding: EdgeInsets.zero), and uses a
-    // tighter 8px corner radius (set on the dialog's shape).
+    // tighter 8px corner radius (set on the dialog's shape). The
+    // transparent barrierColor means the host's ColoredBox
+    // (surfaceContainer) shows through the scrim area outside the
+    // dialog — so the dialog appears as a rounded `surface` card
+    // on a `surfaceContainer` background, with no opaque black gap
+    // between them. Without the transparent barrier, showDialog's
+    // default scrim would paint Colors.black54 over the ColoredBox
+    // and make the margin look black.
     final result = await showDialog<SubmitResult>(
       context: context,
       barrierDismissible: true,
+      barrierColor: Colors.transparent,
       builder: (_) => AddTaskDialog(
         initialUrl: widget.payload.request.url,
         titleBar: _SubWindowTitleBar(
@@ -203,12 +226,12 @@ class _SubWindowHostState extends State<_SubWindowHost> {
       ),
     );
 
-    // 5. Restore normal z-order.
+    // 6. Restore normal z-order.
     try {
       await windowManager.setAlwaysOnTop(false);
     } catch (_) {}
 
-    // 6. Report the result back to the main app. The timeout guards
+    // 7. Report the result back to the main app. The timeout guards
     // against a future regression where invokeMethod hangs (e.g. the
     // native channel handler being overwritten) — without it the
     // sub-window would stay open forever and the task would never be
@@ -234,7 +257,7 @@ class _SubWindowHostState extends State<_SubWindowHost> {
       debugPrint('sub-window: invokeMethod failed: ' + e.toString());
     }
 
-    // 7. Close this sub-window.
+    // 8. Close this sub-window.
     try {
       await WindowController.fromWindowId(widget.subWindowId).close();
     } catch (e) {
@@ -244,11 +267,19 @@ class _SubWindowHostState extends State<_SubWindowHost> {
 
   @override
   Widget build(BuildContext context) {
-    // Transparent background so only the dialog is visible — the
-    // OS window itself is sized by the dialog's intrinsic extent.
-    return const Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SizedBox.shrink(),
+    // The sub-window is WS_POPUP (borderless) and the OS's outer
+    // corners are clipped by a SetWindowRgn rounded region (set
+    // from the C++ side via the `velocita/window_region` platform
+    // channel) so the desktop shows through them. The remaining
+    // client area is filled with a `surface` ColoredBox so the
+    // Flutter engine's opaque black D3D clear color doesn't show
+    // anywhere inside the rounded rectangle. Painting `surface`
+    // (matching the dialog's Material) makes the whole window a
+    // single rounded `surface` card with the title-bar band as the
+    // only visible separation — no separate "background frame".
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: const SizedBox.expand(),
     );
   }
 }

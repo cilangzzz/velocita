@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../../features/hls/hls.dart';
+import '../../../kernel_bridge/kernel_provider.dart';
+import '../../../persistence/database.dart' show DownloadRow, DownloadsDao;
+import '../../../persistence/defaults.dart';
 import '../data/downloads_repository.dart';
 import '../domain/download_task.dart';
 
@@ -33,7 +33,7 @@ final taskListProvider =
 class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
   Timer? _poll;
   static const _pollInterval = Duration(seconds: 5);
-  late File _historyFile;
+  late final DownloadsDao _dao;
 
   /// Local timestamps we track ourselves because aria2 1.37.0 does not
   /// surface `addedAt`/`completedAt` through `tellStatus`. Keys are gid.
@@ -90,30 +90,49 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
 
   @override
   Future<Map<String, TaskSummary>> build() async {
+    _dao = ref.read(appDatabaseProvider).downloadsDao;
     final repo = ref.read(downloadsRepositoryProvider);
-    final dir = await getApplicationSupportDirectory();
-    _historyFile = File('${dir.path}/velocita/history.json');
-    await _historyFile.parent.create(recursive: true);
 
-    final persisted = await _loadHistory();
+    // Hydrate from the DB first. The 5s poll will merge aria2's
+    // live state on top of this; tasks that just transitioned
+    // to complete/error/removed are already here, so we never
+    // show a "lost" entry after a restart.
+    final persistedRows = await _dao.all();
+    final persisted = {
+      for (final r in persistedRows) r.gid: taskSummaryFromRow(r),
+    };
+    for (final r in persistedRows) {
+      if (r.addedAt != null) _addedAt[r.gid] = r.addedAt!;
+      if (r.completedAt != null) _completedAt[r.gid] = r.completedAt!;
+    }
 
+    // Bring aria2's live state in.
     final active = await repo.activeTasks();
     final stopped = await repo.stoppedTasks();
-    final map = <String, TaskSummary>{
-      for (final t in active) t.gid: t,
-      for (final t in stopped) t.gid: t,
-      for (final t in persisted.values) t.gid: t,
+    final liveGids = <String>{
+      for (final t in active) t.gid,
+      for (final t in stopped) t.gid,
     };
-
-    // Hydrate the local time maps from persisted records.
-    for (final t in persisted.values) {
-      if (t.addedAt != null) _addedAt[t.gid] = t.addedAt!;
-      if (t.completedAt != null) _completedAt[t.gid] = t.completedAt!;
-    }
-    // For active tasks, aria2 doesn't tell us when they were added; if
-    // we haven't recorded it, use the persisted value or "now".
     for (final t in active) {
-      _addedAt.putIfAbsent(t.gid, () => t.addedAt ?? DateTime.now());
+      final merged = _mergeAria2(t, persisted[t.gid]);
+      persisted[t.gid] = merged;
+      _addedAt.putIfAbsent(t.gid, () => merged.addedAt ?? DateTime.now());
+    }
+    for (final t in stopped) {
+      final merged = _mergeAria2(t, persisted[t.gid]);
+      persisted[t.gid] = merged;
+      if (merged.isComplete && _completedAt[t.gid] == null) {
+        _completedAt[t.gid] = DateTime.now();
+      }
+    }
+    // The DB has rows that aria2 has forgotten (pruned from
+    // tellStopped). They stay in the table.
+    // Replace any persisted state we don't trust with the
+    // live-or-persisted merged value above.
+    for (final entry in persisted.entries.toList()) {
+      if (!liveGids.contains(entry.key)) {
+        // keep the persisted one as-is
+      }
     }
 
     _poll?.cancel();
@@ -123,78 +142,38 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
       _poll?.cancel();
     });
 
-    return map;
+    return persisted;
   }
 
-  Future<Map<String, TaskSummary>> _loadHistory() async {
-    if (!await _historyFile.exists()) return {};
-    try {
-      final raw =
-          jsonDecode(await _historyFile.readAsString()) as Map<String, dynamic>;
-      final entries = (raw['tasks'] as List?) ?? const [];
-      return {
-        for (final e in entries.cast<Map<String, dynamic>>())
-          (e['gid'] as String): TaskSummary(
-            gid: e['gid'] as String,
-            filename: e['filename'] as String,
-            totalLength: e['totalLength'] as int? ?? 0,
-            completedLength: e['completedLength'] as int? ?? 0,
-            status: parseStatus(e['status'] as String? ?? 'unknown'),
-            downloadSpeed: 0,
-            dir: e['dir'] as String? ?? '',
-            errorCode: e['errorCode'] as String?,
-            errorMessage: e['errorMessage'] as String?,
-            addedAt: e['addedAt'] != null
-                ? DateTime.tryParse(e['addedAt'] as String)
-                : null,
-            completedAt: e['completedAt'] != null
-                ? DateTime.tryParse(e['completedAt'] as String)
-                : null,
-            // Older history.json files won't have this key; missing
-            // means "no source link", which is the safe default.
-            sourceUrl: e['sourceUrl'] as String?,
-          ),
-      };
-    } catch (_) {
-      return {};
-    }
+  /// Merge an aria2 snapshot with the row we may have pre-filled
+  /// at add time. Keeps the pre-filled filename when aria2's
+  /// response didn't carry a path (common for tasks that errored
+  /// instantly), and keeps the pre-filled source URL since aria2
+  /// never reports the original URL back through `tellStatus`.
+  TaskSummary _mergeAria2(TaskSummary aria2, TaskSummary? existing) {
+    if (existing == null) return aria2;
+    final keepFilename = aria2.filename.isEmpty && existing.filename.isNotEmpty;
+    final keepSource = aria2.sourceUrl == null && existing.sourceUrl != null;
+    if (!keepFilename && !keepSource) return aria2;
+    return aria2.copyWith(
+      filename: keepFilename ? existing.filename : null,
+      sourceUrl: keepSource ? existing.sourceUrl : null,
+    );
   }
 
-  Future<void> _persist() async {
-    final tasks = state.value ?? const <String, TaskSummary>{};
-    final payload = {
-      'tasks': tasks.values
-          // HLS bookkeeping never hits history.json: segment gids are
-          // hidden from the state map already; synthetic rows live only
-          // in memory (the merged file on disk is the durable artifact).
-          .where((t) => !_synthetic.containsKey(t.gid))
-          .map((t) => {
-                'gid': t.gid,
-                'filename': t.filename,
-                'totalLength': t.totalLength,
-                'completedLength': t.completedLength,
-                'status': t.status.name,
-                'dir': t.dir,
-                'errorCode': t.errorCode,
-                'errorMessage': t.errorMessage,
-                'addedAt':
-                    _addedAt[t.gid]?.toIso8601String() ?? t.addedAt?.toIso8601String(),
-                'completedAt': _completedAt[t.gid]?.toIso8601String() ??
-                    t.completedAt?.toIso8601String(),
-                'sourceUrl': t.sourceUrl,
-                'savedAt': DateTime.now().toIso8601String(),
-              })
-          .toList(),
-    };
-    try {
-      await _historyFile.writeAsString(jsonEncode(payload));
-    } catch (_) {
-      // Best-effort persistence; don't crash the app if the disk is full.
-    }
+  /// Push a freshly-derived snapshot into the table for [gid]
+  /// BEFORE aria2 has had a chance to report back. Keeps the
+  /// "(unnamed)" failure mode out of the UI.
+  void _prefill(TaskSummary snapshot) {
+    final current = Map<String, TaskSummary>.from(state.value ?? const {});
+    current[snapshot.gid] = snapshot;
+    state = AsyncData(current);
   }
 
-  /// Refresh: ask aria2 for both `tellActive` and `tellStopped`, merge with
-  /// the in-memory map (preserving any tasks aria2 has forgotten).
+  /// Refresh: ask aria2 for both `tellActive` and `tellStopped`,
+  /// merge with the in-memory map (preserving any tasks aria2 has
+  /// forgotten), and write a single batched upsert to the DB for
+  /// everything that changed.
   Future<void> _refresh() async {
     final repo = ref.read(downloadsRepositoryProvider);
     try {
@@ -206,15 +185,11 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
       };
       final current = state.value ?? const <String, TaskSummary>{};
       final next = <String, TaskSummary>{};
-      // Apply the pre-fill preservation to every aria2 snapshot so
-      // tasks that errored before aria2 picked a path keep the name
-      // we derived from the URL at add time, and so the "Copy link"
-      // source survives the round-trip.
       for (final t in active) {
-        next[t.gid] = _preserved(t, current[t.gid]);
+        next[t.gid] = _mergeAria2(t, current[t.gid]);
       }
       for (final t in stopped) {
-        next[t.gid] = _preserved(t, current[t.gid]);
+        next[t.gid] = _mergeAria2(t, current[t.gid]);
       }
       for (final entry in current.entries) {
         if (!liveGids.contains(entry.key)) {
@@ -227,8 +202,6 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
           _completedAt[t.gid] = DateTime.now();
         }
       }
-      // Stamp missing addedAt for active tasks (e.g. history restored but
-      // we lost the local time map across a hot reload).
       for (final t in active) {
         _addedAt.putIfAbsent(t.gid, () => DateTime.now());
       }
@@ -243,8 +216,7 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
           );
         }
       }
-      // Hide HLS-owned segment gids (they belong to a synthetic job row)
-      // and surface the synthetic rows in their place.
+      // Hide HLS-owned segment gids and surface the synthetic rows.
       for (final gids in _hlsJobGids.values) {
         for (final gid in gids) {
           next.remove(gid);
@@ -252,37 +224,26 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
       }
       next.addAll(_synthetic);
       state = AsyncData(next);
-      await _persist();
+
+      // Persist everything except HLS-managed gids (segments) and
+      // synthetic rows (memory-only) in a single batched transaction.
+      final persistable = <DownloadRow>[
+        for (final t in next.values)
+          if (!TaskListNotifier.isHlsSyntheticGid(t.gid) &&
+              !_isHlsSegment(t.gid))
+            downloadRowFromSummary(t),
+      ];
+      await _dao.upsertBatch(persistable);
     } catch (e, st) {
       state = AsyncError(e, st);
     }
   }
 
-  /// Merge an aria2 snapshot with the row we may have pre-filled at
-  /// add time. Keeps the pre-filled filename when aria2's response
-  /// didn't carry a path (common for tasks that errored instantly),
-  /// and keeps the pre-filled source URL since aria2 never reports
-  /// the original URL back through `tellStatus`.
-  TaskSummary _preserved(TaskSummary aria2, TaskSummary? existing) {
-    if (existing == null) return aria2;
-    final keepFilename = aria2.filename.isEmpty && existing.filename.isNotEmpty;
-    final keepSource = aria2.sourceUrl == null && existing.sourceUrl != null;
-    if (!keepFilename && !keepSource) return aria2;
-    return aria2.copyWith(
-      filename: keepFilename ? existing.filename : null,
-      sourceUrl: keepSource ? existing.sourceUrl : null,
-    );
-  }
-
-  /// Push a freshly-derived snapshot into the table for [gid] BEFORE
-  /// aria2 has had a chance to report back. This is what keeps the
-  /// "(unnamed)" failure mode out of the UI: we always show a name
-  /// the user can recognise, even if the download is rejected
-  /// milliseconds later.
-  void _prefill(TaskSummary snapshot) {
-    final current = Map<String, TaskSummary>.from(state.value ?? const {});
-    current[snapshot.gid] = snapshot;
-    state = AsyncData(current);
+  bool _isHlsSegment(String gid) {
+    for (final owned in _hlsJobGids.values) {
+      if (owned.contains(gid)) return true;
+    }
+    return false;
   }
 
   Future<void> addUri(
@@ -397,31 +358,33 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
   }
 
   /// Remove from aria2 tracking. Files on disk are untouched — the
-  /// record stays in the history list until the user explicitly removes it.
+  /// record stays in the history list until the user explicitly
+  /// removes it.
   Future<void> remove(String gid) async {
     final repo = ref.read(downloadsRepositoryProvider);
     await repo.remove(gid);
     await _refresh();
   }
 
-  /// Remove the record from the history list (no aria2 round-trip, no
-  /// disk changes). This is what the UI's trash icon calls.
+  /// Remove the record from the history list (no aria2 round-trip,
+  /// no disk changes). This is what the UI's trash icon calls.
   ///
-  /// Removing a synthetic HLS row cancels the underlying job (stops
-  /// polling, force-removes its segments, deletes the work dir).
+  /// Removing a synthetic HLS row cancels the underlying job
+  /// (stops polling, force-removes its segments, deletes the work
+  /// dir) and is memory-only — synthetic rows aren't persisted.
   Future<void> removeFromHistory(String gid) async {
     if (_synthetic.containsKey(gid)) {
       final jobId = _syntheticJobIds[gid];
       _synthetic.remove(gid);
       _syntheticJobIds.remove(gid);
       if (jobId != null) _hlsJobGids.remove(jobId);
-      state = AsyncData(Map<String, TaskSummary>.from(state.value ?? const {}));
+      state = AsyncData(
+          Map<String, TaskSummary>.from(state.value ?? const {}));
       if (jobId != null) {
         try {
           await ref.read(hlsDownloaderProvider).cancel(jobId);
         } catch (_) {}
       }
-      await _persist();
       return;
     }
     final current = Map<String, TaskSummary>.from(state.value ?? const {});
@@ -429,7 +392,7 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
     _addedAt.remove(gid);
     _completedAt.remove(gid);
     state = AsyncData(current);
-    await _persist();
+    await _dao.deleteByGid(gid);
   }
 
   Future<void> refresh() => _refresh();
@@ -444,7 +407,7 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
     }
     final added = _addedAt[gid];
     final completed = _completedAt[gid];
-    final preserved = _preserved(updated, state.value?[gid]);
+    final preserved = _mergeAria2(updated, state.value?[gid]);
     final merged = (added != null || completed != null)
         ? preserved.copyWith(
             addedAt: added ?? preserved.addedAt,
@@ -454,7 +417,12 @@ class TaskListNotifier extends AsyncNotifier<Map<String, TaskSummary>> {
     final current = Map<String, TaskSummary>.from(state.value ?? const {});
     current[gid] = merged;
     state = AsyncData(current);
-    await _persist();
+    // Persist immediately when the task just transitioned to a
+    // terminal state, so a crash doesn't lose the entry. Active
+    // tasks are flushed on the next 5s batch.
+    if (merged.isComplete || merged.isError) {
+      await _dao.upsertOne(downloadRowFromSummary(merged));
+    }
   }
 }
 

@@ -291,12 +291,16 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog>
       shape: RoundedRectangleBorder(
         borderRadius: Radii.brLg,
       ),
-      // Dialog-level margin: gives the content breathing room from the
-      // dialog's own padding.
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: 24,
-        vertical: 24,
-      ),
+      // No inset padding — the sub-window's host already paints a
+      // surfaceContainer ColoredBox around the dialog (so the
+      // margin is a clean surface tone, not a black gap from the
+      // engine's opaque clear color). Centering the intrinsic-sized
+      // dialog in the window gives the rounded card a small,
+      // even frame. The main app's standalone use keeps the
+      // default 24/24 inset via the null-fallback path below.
+      insetPadding: widget.titleBar != null
+          ? EdgeInsets.zero
+          : const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       titlePadding: widget.titleBar != null
           ? EdgeInsets.zero
           : null,

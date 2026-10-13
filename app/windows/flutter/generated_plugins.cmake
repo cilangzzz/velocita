@@ -6,6 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   desktop_multi_window
   screen_retriever
+  sqlite3_flutter_libs
   system_tray
   window_manager
 )

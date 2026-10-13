@@ -476,7 +476,7 @@ class _CategoryNodeRow extends StatelessWidget {
                     : null,
               ),
               const SizedBox(width: 4),
-              Icon(categoryIcon(category.iconName), size: 16),
+              categoryIconWidget(category.iconName, size: 16),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(

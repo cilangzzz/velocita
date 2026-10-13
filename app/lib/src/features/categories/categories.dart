@@ -5,7 +5,8 @@ export 'domain/category.dart'
     show
         Category,
         categoryIcon,
-        categoryIcons;
+        categoryIconWidget,
+        kMaterialIconNames;
 export 'domain/classification_rule.dart'
     show
         ClassificationRule,

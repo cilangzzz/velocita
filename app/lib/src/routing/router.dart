@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/downloads/downloads.dart' as downloads;
-import '../features/plugins/plugins.dart' as plugins;
-import '../features/scheduler/scheduler.dart' as scheduler;
 import '../features/settings/settings.dart' as settings;
 import '../localization/app_localizations.dart';
 
@@ -34,14 +32,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const SizedBox.shrink(),
           ),
           GoRoute(
-            path: '/scheduler',
-            builder: (_, __) => const SizedBox.shrink(),
-          ),
-          GoRoute(
-            path: '/plugins',
-            builder: (_, __) => const SizedBox.shrink(),
-          ),
-          GoRoute(
             path: '/settings',
             builder: (_, __) => const SizedBox.shrink(),
           ),
@@ -59,9 +49,7 @@ class _ShellLayout extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
     final index = switch (location) {
       '/' => 0,
-      '/scheduler' => 1,
-      '/plugins' => 2,
-      '/settings' => 3,
+      '/settings' => 1,
       _ => 0,
     };
 
@@ -74,21 +62,15 @@ class _ShellLayout extends StatelessWidget {
                 case 0:
                   context.go('/');
                 case 1:
-                  context.go('/scheduler');
-                case 2:
-                  context.go('/plugins');
-                case 3:
                   context.go('/settings');
               }
             }, labels: const [
               ('downloadsTab', Icons.cloud_download_outlined, Icons.cloud_download),
-              ('scheduler', Icons.schedule_outlined, Icons.schedule),
-              ('plugins', Icons.extension_outlined, Icons.extension),
               ('settings', Icons.settings_outlined, Icons.settings),
             ]),
             const VerticalDivider(width: 1),
-            // IndexedStack keeps all four pages mounted; switching tabs
-            // just changes `index` so the offstage branches aren't torn
+            // IndexedStack keeps both pages mounted; switching tabs
+            // just changes `index` so the offstage branch isn't torn
             // down. StackFit.expand makes the body fill the row's width,
             // which DownloadsScreen's inner `Expanded` relies on.
             Expanded(
@@ -97,8 +79,6 @@ class _ShellLayout extends StatelessWidget {
                 sizing: StackFit.expand,
                 children: const [
                   downloads.DownloadsScreen(),
-                  scheduler.SchedulerPage(),
-                  plugins.PluginsPage(),
                   settings.SettingsPage(),
                 ],
               ),
@@ -152,10 +132,6 @@ class _Rail extends StatelessWidget {
     switch (key) {
       case 'downloadsTab':
         return l.downloadsTab;
-      case 'scheduler':
-        return l.scheduler;
-      case 'plugins':
-        return l.plugins;
       case 'settings':
         return l.settings;
       default:

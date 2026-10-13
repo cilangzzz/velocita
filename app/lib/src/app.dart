@@ -7,6 +7,7 @@ import 'features/browser_integration/browser_integration.dart';
 import 'localization/app_localizations.dart';
 import 'localization/locale_provider.dart';
 import 'routing/router.dart';
+import 'theme/radii.dart';
 import 'theme/theme_provider.dart';
 
 /// Top-level MaterialApp.router. The router is created once in
@@ -59,6 +60,71 @@ class VelocitaApp extends ConsumerWidget {
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
       visualDensity: VisualDensity.compact,
+      // ── Corner-radius scale (see theme/radii.dart) ──────────────
+      // Without these overrides M3 widgets default to:
+      //   * Dialog / AlertDialog — 28 dp (huge, reads like iOS)
+      //   * Card                 — 12 dp
+      //   * All buttons          — StadiumBorder (pill)
+      //   * SegmentedButton      — StadiumBorder (pill)
+      //   * InputDecoration      — 4 dp on the focused ring only
+      // We clamp them all to the [Radii] scale so the desktop surface
+      // stays consistent and rectangular.
+      //
+      // Per-widget `shape:` (or inline `BorderRadius.circular`) still
+      // wins, so explicit overrides — e.g. the pill selector button
+      // in downloads_screen.dart — are unaffected.
+      cardTheme: CardThemeData(
+        shape: RoundedRectangleBorder(borderRadius: Radii.brMd),
+      ),
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(borderRadius: Radii.brLg),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        shape: RoundedRectangleBorder(borderRadius: Radii.brLg),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        shape: RoundedRectangleBorder(borderRadius: Radii.brSm),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(borderRadius: Radii.brSm),
+        enabledBorder: OutlineInputBorder(borderRadius: Radii.brSm),
+        focusedBorder: OutlineInputBorder(borderRadius: Radii.brSm),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: Radii.brMd),
+          ),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: Radii.brMd),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: Radii.brMd),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: Radii.brMd),
+          ),
+        ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: Radii.brSm),
+          ),
+        ),
+      ),
     );
   }
 }

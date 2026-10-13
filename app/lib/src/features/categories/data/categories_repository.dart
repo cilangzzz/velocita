@@ -1,18 +1,21 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../kernel_bridge/kernel_provider.dart';
+import '../../../persistence/database.dart' show AppDatabase, CategoriesDao, CategoryRow;
+import '../../../persistence/defaults.dart';
 import '../domain/categories.dart' as cat_domain;
 import '../domain/category.dart';
 import '../domain/classification_rule.dart';
 
 /// Provider exposing the live list of categories + classification rules.
 ///
-/// Backed by a single JSON file under the app's support directory so the
-/// user's category layout survives app restarts.
+/// Backed by the `categories` / `category_extensions` / `category_sites`
+/// / `classification_rules` tables of the shared `velocita.db` (replaces
+/// the previous categories.json).
 final categoriesProvider =
     AsyncNotifierProvider<CategoriesNotifier, CategoriesState>(
   CategoriesNotifier.new,
@@ -39,92 +42,78 @@ class CategoriesState {
 }
 
 class CategoriesNotifier extends AsyncNotifier<CategoriesState> {
-  late File _file;
-  final List<ClassificationRule> _rules = [];
-  List<Category> _categories = const [];
+  late final AppDatabase _db;
+  late final CategoriesDao _dao;
+  late final String _downloadsPath;
 
   @override
   Future<CategoriesState> build() async {
-    final dir = await getApplicationSupportDirectory();
-    _file = File('${dir.path}/velocita/categories.json');
-    await _file.parent.create(recursive: true);
-    if (await _file.exists()) {
-      try {
-        final raw =
-            jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
-        _categories = (raw['categories'] as List)
-            .map((e) => Category.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _rules
-          ..clear()
-          ..addAll((raw['rules'] as List).map((e) =>
-              ClassificationRule.fromJson(e as Map<String, dynamic>)));
-      } catch (_) {
-        // Corrupt file — fall back to defaults.
-        _categories = const [];
-        _rules.clear();
-      }
-    }
+    _db = ref.read(appDatabaseProvider);
+    _dao = _db.categoriesDao;
+    final support = await getApplicationSupportDirectory();
     final downloads = await getDownloadsDirectory() ??
-        Directory('${dir.path}/velocita/downloads');
-    if (_categories.isEmpty) {
-      _categories = Category.defaults(downloads.path);
-    } else {
-      // Migrate: fold any seed extensions the user's persisted default
-      // categories are missing (e.g. `.m3u8` added after their first
-      // run) back in without touching their name / save dir / custom
-      // extensions. Idempotent — once present, nothing changes.
-      final changed = _mergeDefaultExtensions(downloads.path);
-      if (changed) await _persist();
+        Directory('${support.path}/velocita/downloads');
+    _downloadsPath = downloads.path;
+
+    // First-run / empty table: seed the 7 default categories
+    // (with their extensions + sites) so the UI immediately has
+    // something to render.
+    if ((await _dao.allCategories()).isEmpty) {
+      await _seedDefaultCategories();
     }
     return _snapshot();
   }
 
-  /// For every `isDefault` category present in BOTH the persisted list
-  /// and the current [Category.defaults], append any seed extensions the
-  /// persisted one lacks. Returns `true` iff something changed.
-  bool _mergeDefaultExtensions(String downloadDir) {
-    final seeds = {for (final c in Category.defaults(downloadDir)) c.id: c};
-    var changed = false;
-    final next = <Category>[];
-    for (final cat in _categories) {
-      final seed = seeds[cat.id];
-      if (seed == null || !cat.isDefault) {
-        next.add(cat);
-        continue;
+  Future<void> _seedDefaultCategories() async {
+    final seed = defaultCategorySeed(_downloadsPath);
+    await _db.transaction(() async {
+      for (final s in seed) {
+        await _dao.upsertCategory(s.row);
+        await _dao.replaceExtensions(s.row.id, s.extensions);
+        await _dao.replaceSites(s.row.id, s.sites);
       }
-      final missing = [
-        for (final e in seed.extensions)
-          if (!cat.extensions.contains(e)) e,
-      ];
-      if (missing.isEmpty) {
-        next.add(cat);
-      } else {
-        next.add(cat.copyWith(extensions: [...cat.extensions, ...missing]));
-        changed = true;
-      }
-    }
-    if (changed) _categories = next;
-    return changed;
+    });
   }
 
-  CategoriesState _snapshot() => CategoriesState(
-        categories: List.unmodifiable(_categories),
-        rules: _sortedRules(),
-      );
+  Future<CategoriesState> _snapshot() async {
+    final cats = await _dao.allCategories();
+    final extRows = await _dao.allExtensions();
+    final siteRows = await _dao.allSites();
+    final ruleRows = await _dao.allRules();
 
-  List<ClassificationRule> _sortedRules() {
-    final sorted = [..._rules];
+    final extsByCat = <String, List<String>>{};
+    for (final r in extRows) {
+      (extsByCat[r.categoryId] ??= <String>[]).add(r.ext);
+    }
+    final sitesByCat = <String, List<String>>{};
+    for (final r in siteRows) {
+      (sitesByCat[r.categoryId] ??= <String>[]).add(r.site);
+    }
+
+    final categories = [
+      for (final c in cats)
+        Category(
+          id: c.id,
+          name: c.name,
+          parentId: c.parentId,
+          defaultSaveDir: c.defaultSaveDir,
+          extensions: List.unmodifiable(extsByCat[c.id] ?? const []),
+          sites: List.unmodifiable(sitesByCat[c.id] ?? const []),
+          iconName: c.iconName,
+          isDefault: c.isDefault,
+        ),
+    ];
+    final rules = [for (final r in ruleRows) classificationRuleFromRow(r)];
+    return CategoriesState(
+      categories: List.unmodifiable(categories),
+      rules: _sortedRules(rules),
+    );
+  }
+
+  List<ClassificationRule> _sortedRules(List<ClassificationRule> rules) {
+    final sorted = [...rules];
     sorted.sort((a, b) => b.priority.compareTo(a.priority));
     return List.unmodifiable(sorted);
-  }
-
-  Future<void> _persist() async {
-    final payload = {
-      'categories': _categories.map((c) => c.toJson()).toList(),
-      'rules': _sortedRules().map((r) => r.toJson()).toList(),
-    };
-    await _file.writeAsString(jsonEncode(payload));
   }
 
   /// Resolve the save directory for a new download. Order:
@@ -136,39 +125,75 @@ class CategoriesNotifier extends AsyncNotifier<CategoriesState> {
     required String defaultDownloadDir,
     String? explicit,
   }) {
+    final current = state.value;
     return cat_domain.resolveSaveDir(
-      categories: _categories,
+      categories: current?.categories ?? const [],
       filename: filename,
       defaultDownloadDir: defaultDownloadDir,
       explicit: explicit,
     );
   }
 
-  /// Find the category id that matches `filename` via the active rules.
-  /// Returns `null` if no rule fires.
-  String? classify(String filename) =>
-      cat_domain.classifyByRules(_sortedRules(), filename);
+  /// Find the category id that matches `filename` via the active
+  /// rules. Returns `null` if no rule fires.
+  String? classify(String filename) {
+    final rules = state.value?.rules ?? const [];
+    return cat_domain.classifyByRules(rules, filename);
+  }
 
   /// Add a new user-defined category.
   Future<void> addCategory(Category c) async {
-    _categories = [..._categories, c];
-    state = AsyncData(_snapshot());
-    await _persist();
+    final current = state.value;
+    final next = [...?current?.categories, c];
+    state = AsyncData(CategoriesState(
+      categories: List.unmodifiable(next),
+      rules: current?.rules ?? const [],
+    ));
+    final row = CategoryRow(
+      id: c.id,
+      name: c.name,
+      parentId: c.parentId,
+      defaultSaveDir: c.defaultSaveDir,
+      isDefault: c.isDefault,
+      iconName: c.iconName,
+      sortOrder: next.length - 1,
+    );
+    await _db.transaction(() async {
+      await _dao.upsertCategory(row);
+      await _dao.replaceExtensions(c.id, c.extensions);
+      await _dao.replaceSites(c.id, c.sites);
+    });
   }
 
   /// Edit an existing category in place.
   Future<void> updateCategory(Category c) async {
-    _categories = [
-      for (final existing in _categories)
+    final current = state.value;
+    if (current == null) return;
+    final next = [
+      for (final existing in current.categories)
         if (existing.id == c.id) c else existing,
     ];
-    state = AsyncData(_snapshot());
-    await _persist();
+    state = AsyncData(current.copyWith(categories: List.unmodifiable(next)));
+    final row = CategoryRow(
+      id: c.id,
+      name: c.name,
+      parentId: c.parentId,
+      defaultSaveDir: c.defaultSaveDir,
+      isDefault: c.isDefault,
+      iconName: c.iconName,
+      sortOrder: next.indexOf(c),
+    );
+    await _db.transaction(() async {
+      await _dao.upsertCategory(row);
+      await _dao.replaceExtensions(c.id, c.extensions);
+      await _dao.replaceSites(c.id, c.sites);
+    });
   }
 
   Future<void> removeCategory(String id) async {
-    // Guard: default categories are protected.
-    final target = _categories.firstWhere(
+    final current = state.value;
+    if (current == null) return;
+    final target = current.categories.firstWhere(
       (c) => c.id == id,
       orElse: () => const Category(
         id: '',
@@ -179,42 +204,63 @@ class CategoriesNotifier extends AsyncNotifier<CategoriesState> {
     );
     if (target.id.isEmpty) return;
     if (target.isDefault) return;
-    // Guard: parents with children must be emptied first. The UI
-    // disables the delete menu item in this case, but the notifier
-    // enforces the rule as well so a stray call is harmless.
-    final hasChildren = _categories.any((c) => c.parentId == id);
+    // Guard: parents with children must be emptied first.
+    final hasChildren = current.categories.any((c) => c.parentId == id);
     if (hasChildren) return;
 
-    _categories = _categories.where((c) => c.id != id).toList();
-    _rules.removeWhere((r) => r.categoryId == id);
-    state = AsyncData(_snapshot());
-    await _persist();
+    final nextCats = current.categories.where((c) => c.id != id).toList();
+    final nextRules = current.rules.where((r) => r.categoryId != id).toList();
+    state = AsyncData(CategoriesState(
+      categories: List.unmodifiable(nextCats),
+      rules: List.unmodifiable(nextRules),
+    ));
+    // ON DELETE CASCADE on the children tables cleans up the
+    // extensions / sites / rules automatically.
+    await _dao.deleteCategory(id);
   }
 
   /// Convenience wrapper around the domain helper. `null` when the
   /// host matches no category's [Category.sites] list.
   Category? classifyBySite(String host) {
-    return cat_domain.classifyBySite(_categories, host);
+    final cats = state.value?.categories ?? const [];
+    return cat_domain.classifyBySite(cats, host);
   }
 
   Future<void> addRule(ClassificationRule r) async {
-    _rules.add(r);
-    state = AsyncData(_snapshot());
-    await _persist();
+    final current = state.value;
+    if (current == null) return;
+    final next = [...current.rules, r];
+    state = AsyncData(current.copyWith(rules: _sortedRules(next)));
+    await _dao.upsertRule(classificationRuleToRow(r));
   }
 
   Future<void> removeRule(String id) async {
-    _rules.removeWhere((r) => r.id == id);
-    state = AsyncData(_snapshot());
-    await _persist();
+    final current = state.value;
+    if (current == null) return;
+    final next = current.rules.where((r) => r.id != id).toList();
+    state = AsyncData(current.copyWith(rules: List.unmodifiable(next)));
+    await _dao.deleteRule(id);
   }
 
   /// Reset back to the seeded defaults. Rules are wiped, categories
-  /// recreated from `Category.defaults(defaultDownloadDir)`.
+  /// recreated from `Category.defaults(_downloadsPath)`.
   Future<void> resetToDefaults(String defaultDownloadDir) async {
-    _categories = Category.defaults(defaultDownloadDir);
-    _rules.clear();
-    state = AsyncData(_snapshot());
-    await _persist();
+    await _db.transaction(() async {
+      // Drop every row from the four tables — the cascade on
+      // children cleans up extensions / sites / rules.
+      for (final c in (await _dao.allCategories())) {
+        await _dao.deleteCategory(c.id);
+      }
+      for (final r in (await _dao.allRules())) {
+        await _dao.deleteRule(r.id);
+      }
+      final seed = defaultCategorySeed(defaultDownloadDir);
+      for (final s in seed) {
+        await _dao.upsertCategory(s.row);
+        await _dao.replaceExtensions(s.row.id, s.extensions);
+        await _dao.replaceSites(s.row.id, s.sites);
+      }
+    });
+    state = AsyncData(await _snapshot());
   }
 }

@@ -748,6 +748,12 @@ class _SpeedLimitControlState extends ConsumerState<_SpeedLimitControl> {
 ///
 /// Note: `changeGlobalOption` only applies to NEW downloads; already-
 /// running tasks keep their original piece layout.
+/// `split` — how many ranges aria2 cuts each file into.
+///
+/// Note: `changeGlobalOption` only applies to NEW downloads; already-
+/// running tasks keep their original piece layout. The behavioural
+/// caveat is intentionally NOT shown in the subtitle so the tile
+/// matches `_MaxConnPerServerTile` (title + hint + trailing stepper).
 class _SplitTile extends ConsumerWidget {
   const _SplitTile();
 
@@ -756,97 +762,26 @@ class _SplitTile extends ConsumerWidget {
     final l = AppLocalizations.of(context);
     final settings = ref.watch(downloadSettingsProvider);
     return settings.when(
-      data: (s) => _SplitForm(initial: s.split),
+      data: (s) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(l.settingSplit),
+        subtitle: Text(
+          l.settingSplitHint,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        trailing: _ConcurrentStepper(
+          value: s.split,
+          min: 1,
+          max: 16,
+          onCommit: (v) =>
+              ref.read(downloadSettingsProvider.notifier).apply(split: v),
+        ),
+      ),
       loading: () => const _SkeletonRow(),
       error: (e, _) => ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text(l.settingSplit),
         subtitle: Text(e.toString()),
-      ),
-    );
-  }
-}
-
-class _SplitForm extends ConsumerStatefulWidget {
-  const _SplitForm({required this.initial});
-  final int initial;
-
-  @override
-  ConsumerState<_SplitForm> createState() => _SplitFormState();
-}
-
-class _SplitFormState extends ConsumerState<_SplitForm> {
-  late int _pending;
-
-  @override
-  void initState() {
-    super.initState();
-    _pending = widget.initial;
-  }
-
-  @override
-  void didUpdateWidget(covariant _SplitForm old) {
-    super.didUpdateWidget(old);
-    if (widget.initial != old.initial) _pending = widget.initial;
-  }
-
-  Future<void> _commit(int v) async {
-    setState(() => _pending = v);
-    try {
-      await ref.read(downloadSettingsProvider.notifier).apply(split: v);
-    } catch (_) {/* keep _pending; user can retry */}
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l.settingSplit),
-            subtitle: Text(
-              l.settingSplitHint,
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-          Row(
-            children: [
-              IconButton(
-                tooltip: '-',
-                icon: const Icon(Icons.remove),
-                onPressed: _pending > 1 ? () => _commit(_pending - 1) : null,
-              ),
-              SizedBox(
-                width: 36,
-                child: Text(
-                  '$_pending',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                tooltip: '+',
-                icon: const Icon(Icons.add),
-                onPressed: _pending < 16 ? () => _commit(_pending + 1) : null,
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 4, bottom: 8),
-            child: Text(
-              l.settingSplitAppliesToNew,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1198,7 +1133,7 @@ class _ProxyFormState extends ConsumerState<_ProxyForm> {
               child: FilledButton.tonalIcon(
                 onPressed: _apply,
                 icon: const Icon(Icons.check, size: 16),
-                label: Text(l.download),
+                label: Text(l.save),
               ),
             ),
           ],

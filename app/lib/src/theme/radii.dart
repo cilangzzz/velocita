@@ -6,7 +6,7 @@ import 'package:flutter/widgets.dart';
 /// desktop download manager — large radii make widgets (pill selectors,
 /// popup menus) look like mobile/IOS chrome rather than native desktop UI.
 /// Most call sites should reach for [md] or [lg]; [xs] is reserved for
-/// pip-sized cells (scheduler heatmap, legend dots).
+/// pip-sized cells (legend dots, swatches).
 ///
 /// Scale:
 ///   * [xs] — 2 dp, sub-element rounding (heatmap cells, swatches)

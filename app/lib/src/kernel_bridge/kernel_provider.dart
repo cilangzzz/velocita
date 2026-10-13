@@ -11,3 +11,12 @@ final kernelProvider = Provider<KernelFacade>((ref) {
     'kernelProvider was read before bootstrapKernel() finished.',
   );
 });
+
+/// Riverpod handle to the [AppDatabase] living on the [KernelFacade].
+///
+/// Same override-in-main.dart pattern as [kernelProvider]. Exposed as
+/// its own provider so notifiers can `ref.read(appDatabaseProvider)`
+/// without each one having to know about the facade shape.
+final appDatabaseProvider = Provider((ref) {
+  return ref.read(kernelProvider).appDatabase;
+});

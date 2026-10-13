@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
+
+import '../../../kernel_bridge/kernel_provider.dart';
+import '../../../persistence/database.dart' show ColumnsDao, ColumnLayoutRow;
+import '../../../persistence/defaults.dart';
 
 /// Stable identifier for a column in the downloads table. The order of
 /// values here is the default rendering order; the persisted config
@@ -99,65 +100,46 @@ final columnsProvider =
 );
 
 class ColumnsNotifier extends AsyncNotifier<ColumnsState> {
-  late File _file;
+  late final ColumnsDao _dao;
 
   @override
   Future<ColumnsState> build() async {
-    final dir = await getApplicationSupportDirectory();
-    _file = File('${dir.path}/velocita/columns.json');
-    await _file.parent.create(recursive: true);
-    if (await _file.exists()) {
-      try {
-        final raw =
-            jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
-        final orderRaw = (raw['order'] as List?)?.cast<String>();
-        final hiddenRaw = (raw['hidden'] as List?)?.cast<String>();
-        if (orderRaw != null) {
-          // Reconcile against the canonical set of ids. Drop unknowns,
-          // append any new defaults at the end, and always force
-          // filename to position 0 (locked, never re-orderable).
-          final known = {for (final s in kTableColumns) s.id.name};
-          final cleaned = <ColumnId>[];
-          for (final name in orderRaw) {
-            if (!known.contains(name)) continue;
-            final id = ColumnId.values.byName(name);
-            if (id == ColumnId.filename) continue; // placed explicitly below
-            cleaned.add(id);
-          }
-          // Remove any ids that were persisted but the user no longer
-          // has (defensive against future schema changes).
-          for (final s in kTableColumns) {
-            if (s.id == ColumnId.filename) continue;
-            if (!cleaned.contains(s.id)) cleaned.add(s.id);
-          }
-          final hidden = <ColumnId>{};
-          if (hiddenRaw != null) {
-            for (final name in hiddenRaw) {
-              if (!known.contains(name)) continue;
-              final id = ColumnId.values.byName(name);
-              if (id == ColumnId.filename) continue; // never hide filename
-              hidden.add(id);
-            }
-          }
-          return ColumnsState(
-            order: [ColumnId.filename, ...cleaned],
-            hidden: hidden,
-          );
-        }
-      } catch (_) {
-        // Corrupt file → fall through to defaults.
-      }
+    _dao = ref.read(appDatabaseProvider).columnsDao;
+    // First-run / empty table: seed the default 6 columns, then read.
+    if ((await _dao.all()).isEmpty) {
+      await _dao.replaceAll(defaultColumnSeed());
     }
-    return const ColumnsState(
-      order: [
-        ColumnId.filename,
-        ColumnId.status,
-        ColumnId.progress,
-        ColumnId.speed,
-        ColumnId.size,
-        ColumnId.added,
-      ],
-      hidden: <ColumnId>{},
+    final rows = await _dao.all();
+    return _stateFromRows(rows);
+  }
+
+  ColumnsState _stateFromRows(List<ColumnLayoutRow> rows) {
+    // Reconcile against the canonical set: drop unknown ids, append
+    // any new defaults at the end, and always force filename to
+    // position 0 (locked, never re-orderable). Same logic the
+    // pre-Drift code path used to apply on load.
+    final known = {for (final s in kTableColumns) s.id.name};
+    final sorted = [...rows]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final cleaned = <ColumnId>[];
+    for (final r in sorted) {
+      if (!known.contains(r.columnId)) continue;
+      final id = ColumnId.values.byName(r.columnId);
+      if (id == ColumnId.filename) continue;
+      cleaned.add(id);
+    }
+    for (final s in kTableColumns) {
+      if (s.id == ColumnId.filename) continue;
+      if (!cleaned.contains(s.id)) cleaned.add(s.id);
+    }
+    final hidden = <ColumnId>{
+      for (final r in sorted)
+        if (!r.visible && known.contains(r.columnId))
+          ColumnId.values.byName(r.columnId),
+    };
+    hidden.remove(ColumnId.filename); // never hide filename
+    return ColumnsState(
+      order: [ColumnId.filename, ...cleaned],
+      hidden: hidden,
     );
   }
 
@@ -168,7 +150,7 @@ class ColumnsNotifier extends AsyncNotifier<ColumnsState> {
     final hidden = {...s.hidden};
     if (!hidden.add(id)) hidden.remove(id);
     state = AsyncData(s.copyWith(hidden: hidden));
-    await _persist();
+    await _dao.setVisible(id.name, !hidden.contains(id));
   }
 
   /// Move [id] one step in [direction] (-1 = up, +1 = down). Filename
@@ -182,19 +164,17 @@ class ColumnsNotifier extends AsyncNotifier<ColumnsState> {
     final idx = s.order.indexOf(id);
     if (idx < 0) return;
     final newIdx = idx + direction;
-    // Can't move past position 1 (above would be filename) or past
-    // the end of the list.
     if (newIdx < 1 || newIdx >= s.order.length) return;
     final order = [...s.order];
     final col = order.removeAt(idx);
     order.insert(newIdx, col);
     state = AsyncData(s.copyWith(order: order));
-    await _persist();
+    await _dao.setOrder([for (final c in order) c.name]);
   }
 
   /// Reset back to the default order with all columns visible.
   Future<void> resetToDefaults() async {
-    state = const AsyncData(ColumnsState(
+    const fresh = ColumnsState(
       order: [
         ColumnId.filename,
         ColumnId.status,
@@ -204,22 +184,8 @@ class ColumnsNotifier extends AsyncNotifier<ColumnsState> {
         ColumnId.added,
       ],
       hidden: <ColumnId>{},
-    ));
-    await _persist();
-  }
-
-  Future<void> _persist() async {
-    final s = state.value;
-    if (s == null) return;
-    final payload = {
-      'order': s.order.map((c) => c.name).toList(),
-      'hidden': s.hidden.map((c) => c.name).toList(),
-    };
-    try {
-      await _file.writeAsString(jsonEncode(payload));
-    } catch (_) {
-      // Best-effort; if the disk is full the user loses the custom
-      // layout but the table keeps working.
-    }
+    );
+    state = const AsyncData(fresh);
+    await _dao.replaceAll(defaultColumnSeed());
   }
 }

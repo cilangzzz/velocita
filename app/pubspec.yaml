@@ -54,6 +54,10 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.24
   path: ^1.9.0
 
+  # Hashing for deterministic custom-icon filenames so re-picking
+  # the same source file is a no-op.
+  crypto: ^3.0.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -2,6 +2,32 @@
 
 All notable changes to Velocita are documented here. Dates in `YYYY-MM-DD`.
 
+## 2026-10-13 — Drop M4 scheduler / plugins stubs
+
+### Removed
+
+- **scheduler / plugins features** — the M4 time-window scheduler and
+  plugin manager were never more than UI stubs (no kernel, no
+  persistence, no aria2 wiring), and have now been removed:
+  - `app/lib/src/features/scheduler/` and
+    `app/lib/src/features/plugins/` deleted.
+  - `packages/velocita_plugin_bt/` and
+    `packages/velocita_plugin_http/` (both empty) deleted.
+  - `docs/modules/time-slot/` and `docs/modules/plugin/` (their
+    design docs) deleted.
+  - `router.dart` shell shrinks from 4 tabs to 2 (downloads +
+    settings); `/scheduler` and `/plugins` routes gone;
+    `_Rail._labelFor` cases for those keys removed.
+  - `app_localizations.dart` drops 8 keys (`scheduler`, `plugins`,
+    `schedulerAdd`, `schedulerPeak`, `schedulerOffPeak`,
+    `pluginEnable`, `pluginDisable`, `pluginInstall`) across
+    getters, en catalog, zh catalog, and the locale registry.
+  - `theme/radii.dart` doc-comment loses its `scheduler heatmap`
+    example mention.
+  - `velocita/README.md` M4 row updated to list only the settings
+    page; `docs/modules/velocita/{README,gaps,CHANGELOG}.md` mark
+    the two features as deleted (2026-10-13).
+
 ## 2026-10-08 — M6: categories + DataTable UI
 
 ### Added

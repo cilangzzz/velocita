@@ -30,6 +30,77 @@
 #include "desktop_multi_window/desktop_multi_window_plugin.h"
 #include "screen_retriever/screen_retriever_plugin.h"
 #include "window_manager/window_manager_plugin.h"
+// Rounded borderless sub-window: subclass the sub-window's WndProc
+// from the desktop_multi_window created-callback and re-apply a
+// SetWindowRgn rounded rectangle on every WM_WINDOWPOSCHANGED
+// (covers show, resize, maximize, restore). The OS does not
+// composite the clipped outer corners, so the desktop shows
+// through them instead of the engine's opaque black D3D clear
+// color. Pure Win32 - no MethodChannel, no flutter:: engine
+// classes - so it links cleanly inside the runner (which only
+// links the C engine, not the C++ PluginRegistrarManager wrapper
+// that C++ plugins like desktop_multi_window use).
+
+#include <unordered_map>
+
+namespace {
+
+// Per-HWND map of the original WndProc that desktop_multi_window
+// installed on each sub-window. We call it via CallWindowProc so
+// the plugin's own window handling (WM_SIZE child re-layout, etc.)
+// keeps working. The map intentionally leaks: entries live for the
+// lifetime of the process, but the count is bounded by the number
+// of sub-windows ever spawned (one per browser-extension trigger).
+std::unordered_map<HWND, WNDPROC> &OrigWndProcMap() {
+  static std::unordered_map<HWND, WNDPROC> m;
+  return m;
+}
+
+// Radius (in pixels, at 100% DPI) for the rounded outer corners.
+// Matches Radii.lg (8 dp) in the Flutter theme - a deliberately
+// subtle rounding, not a big pill. Adjust here if the design
+// wants something softer.
+constexpr int kCornerRadiusPx = 8;
+
+void ApplyRoundedRegion(HWND root) {
+  RECT wr;
+  ::GetWindowRect(root, &wr);
+  int w = wr.right - wr.left;
+  int h = wr.bottom - wr.top;
+  if (w <= 0 || h <= 0) return;
+  // CreateRoundRectRgn's last two params are the ellipse DIAMETERS
+  // used for the corners, so 2*radius.
+  HRGN hrgn = ::CreateRoundRectRgn(0, 0, w, h,
+                                   kCornerRadiusPx * 2,
+                                   kCornerRadiusPx * 2);
+  ::SetWindowRgn(root, hrgn, TRUE);
+}
+
+LRESULT CALLBACK VelocitaSubWindowProc(HWND hwnd, UINT msg,
+                                       WPARAM wparam, LPARAM lparam) {
+  if (msg == WM_WINDOWPOSCHANGED) {
+    // Fires on show, resize, move, maximize, and restore. A
+    // maximized borderless window fills the screen, so the
+    // rounded region (which was sized for the restored extent)
+    // would clip a full-screen window down to a tiny rect and
+    // must be cleared. IsZoomed() returns TRUE while the window
+    // is in the maximized state, FALSE otherwise (including
+    // during the SIZE_RESTORED animation, which is what we
+    // want for re-apply).
+    if (::IsZoomed(hwnd)) {
+      ::SetWindowRgn(hwnd, NULL, TRUE);
+    } else {
+      ApplyRoundedRegion(hwnd);
+    }
+  }
+  auto it = OrigWndProcMap().find(hwnd);
+  if (it == OrigWndProcMap().end()) {
+    return ::DefWindowProc(hwnd, msg, wparam, lparam);
+  }
+  return ::CallWindowProc(it->second, hwnd, msg, wparam, lparam);
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -93,6 +164,23 @@ bool FlutterWindow::OnCreate() {
             root, nullptr, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
                 SWP_FRAMECHANGED);
+
+        // Subclass the WndProc so we can react to every resize /
+        // show / maximize / restore and re-apply the rounded
+        // region at the new size. The original WndProc (installed
+        // by desktop_multi_window's FlutterWindow ctor) is saved
+        // and called via CallWindowProc so the plugin's own
+        // window handling keeps working.
+        WNDPROC orig = reinterpret_cast<WNDPROC>(
+            ::GetWindowLongPtr(root, GWLP_WNDPROC));
+        OrigWndProcMap()[root] = orig;
+        ::SetWindowLongPtr(root, GWLP_WNDPROC,
+                           reinterpret_cast<LONG_PTR>(
+                               VelocitaSubWindowProc));
+        // Apply the rounded region at the current (default)
+        // size so the very first show is already rounded; the
+        // WndProc subclass will keep it correct across resizes.
+        ApplyRoundedRegion(root);
       }
     }
   });

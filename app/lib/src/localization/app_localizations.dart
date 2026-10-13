@@ -39,6 +39,7 @@ class AppLocalizations {
   String get refresh => _t(_catalog['refresh']!);
   String get cancel => _t(_catalog['cancel']!);
   String get download => _t(_catalog['download']!);
+  String get save => _t(_catalog['save']!);
   String get all => _t(_catalog['all']!);
   String get active => _t(_catalog['active']!);
   String get paused => _t(_catalog['paused']!);
@@ -85,19 +86,11 @@ class AppLocalizations {
   String get tabTorrent => _t(_catalog['tabTorrent']!);
   String get magnetLabel => _t(_catalog['magnetLabel']!);
   String get settings => _t(_catalog['settings']!);
-  String get scheduler => _t(_catalog['scheduler']!);
-  String get plugins => _t(_catalog['plugins']!);
   String get general => _t(_catalog['general']!);
   String get downloads => _t(_catalog['downloads']!);
   String get connection => _t(_catalog['connection']!);
   String get startup => _t(_catalog['startup']!);
   String get advanced => _t(_catalog['advanced']!);
-  String get schedulerOffPeak => _t(_catalog['schedulerOffPeak']!);
-  String get schedulerPeak => _t(_catalog['schedulerPeak']!);
-  String get schedulerAdd => _t(_catalog['schedulerAdd']!);
-  String get pluginEnable => _t(_catalog['pluginEnable']!);
-  String get pluginDisable => _t(_catalog['pluginDisable']!);
-  String get pluginInstall => _t(_catalog['pluginInstall']!);
   String get settingsTitle => _t(_catalog['settingsTitle']!);
   String get themeDark => _t(_catalog['themeDark']!);
   String get themeLight => _t(_catalog['themeLight']!);
@@ -178,7 +171,6 @@ class AppLocalizations {
       _t(_catalog['deleteBlockedNonEmpty']!);
   String get confirmDeleteCategory =>
       _t(_catalog['confirmDeleteCategory']!);
-  String get save => _t(_catalog['save']!);
   String get batchOps => _t(_catalog['batchOps']!);
   String get selectAll => _t(_catalog['selectAll']!);
   String get invertSelection => _t(_catalog['invertSelection']!);
@@ -332,19 +324,11 @@ const Map<String, Map<String, String>> _strings = {
     'tabTorrent': 'Torrent',
     'magnetLabel': 'Magnet URI',
     'settings': 'Settings',
-    'scheduler': 'Scheduler',
-    'plugins': 'Plugins',
     'general': 'General',
     'downloads': 'Downloads',
     'connection': 'Connection',
     'startup': 'Startup',
     'advanced': 'Advanced',
-    'schedulerOffPeak': 'Off-Peak Window',
-    'schedulerPeak': 'Peak Window',
-    'schedulerAdd': 'Add Window',
-    'pluginEnable': 'Enable',
-    'pluginDisable': 'Disable',
-    'pluginInstall': 'Install from folder',
     'settingsTitle': 'Settings',
     'themeDark': 'Dark',
     'themeLight': 'Light',
@@ -504,6 +488,7 @@ const Map<String, Map<String, String>> _strings = {
     'refresh': '刷新',
     'cancel': '取消',
     'download': '下载',
+    'save': '保存',
     'all': '全部',
     'active': '下载中',
     'paused': '已暂停',
@@ -548,19 +533,11 @@ const Map<String, Map<String, String>> _strings = {
     'tabTorrent': '种子',
     'magnetLabel': '磁链 URI',
     'settings': '设置',
-    'scheduler': '调度器',
-    'plugins': '插件',
     'general': '常规',
     'downloads': '下载',
     'connection': '连接',
     'startup': '启动',
     'advanced': '高级',
-    'schedulerOffPeak': '低峰时段',
-    'schedulerPeak': '高峰时段',
-    'schedulerAdd': '添加时段',
-    'pluginEnable': '启用',
-    'pluginDisable': '停用',
-    'pluginInstall': '从文件夹安装',
     'settingsTitle': '设置',
     'themeDark': '深色',
     'themeLight': '浅色',
@@ -622,7 +599,6 @@ const Map<String, Map<String, String>> _strings = {
     'deleteBlockedDefault': '默认分类不允许删除',
     'deleteBlockedNonEmpty': '请先删除其子分类',
     'confirmDeleteCategory': '确定删除该分类？磁盘上的文件将保留。',
-    'save': '保存',
     'batchOps': '批量操作',
     'selectAll': '全选',
     'invertSelection': '反选',
@@ -743,19 +719,11 @@ const Map<String, String> _catalog = {
   'tabTorrent': 'tabTorrent',
   'magnetLabel': 'magnetLabel',
   'settings': 'settings',
-  'scheduler': 'scheduler',
-  'plugins': 'plugins',
   'general': 'general',
   'downloads': 'downloads',
   'connection': 'connection',
   'startup': 'startup',
   'advanced': 'advanced',
-  'schedulerOffPeak': 'schedulerOffPeak',
-  'schedulerPeak': 'schedulerPeak',
-  'schedulerAdd': 'schedulerAdd',
-  'pluginEnable': 'pluginEnable',
-  'pluginDisable': 'pluginDisable',
-  'pluginInstall': 'pluginInstall',
   'settingsTitle': 'settingsTitle',
   'themeDark': 'themeDark',
   'themeLight': 'themeLight',

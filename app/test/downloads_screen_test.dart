@@ -1,13 +1,17 @@
 // Widget tests for the DownloadsScreen + add-task flow.
 //
 // These tests stub `DownloadsRepository` so we don't need a live aria2,
-// and they stub `CategoriesNotifier` so the sidebar tree can render
-// without a real `path_provider` channel.
+// stub `CategoriesNotifier` so the sidebar tree can render without a
+// real `path_provider` channel, and provide an in-memory
+// `AppDatabase` so the notifiers that now read from the SQLite store
+// can still construct themselves.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:velocita/src/features/categories/categories.dart';
 import 'package:velocita/src/features/downloads/downloads.dart';
+import 'package:velocita/src/kernel_bridge/kernel_provider.dart';
+import 'package:velocita/src/persistence/database.dart';
 
 class _FakeRepo implements DownloadsRepository {
   final List<String> addedUris = [];
@@ -67,9 +71,11 @@ void main() {
   testWidgets('DownloadsScreen renders empty state with no tasks',
       (tester) async {
     final repo = _FakeRepo();
+    final db = AppDatabase.memory();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appDatabaseProvider.overrideWithValue(db),
           downloadsRepositoryProvider.overrideWithValue(repo),
           categoriesProvider.overrideWith(_FakeCategoriesNotifier.new),
         ],
@@ -84,9 +90,11 @@ void main() {
 
   testWidgets('Add-task dialog opens and shows tabs', (tester) async {
     final repo = _FakeRepo();
+    final db = AppDatabase.memory();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appDatabaseProvider.overrideWithValue(db),
           downloadsRepositoryProvider.overrideWithValue(repo),
           categoriesProvider.overrideWith(_FakeCategoriesNotifier.new),
         ],

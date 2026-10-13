@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:velocita/src/features/browser_integration/browser_integration.dart';
+import 'package:velocita/src/kernel_bridge/kernel_provider.dart';
+import 'package:velocita/src/persistence/database.dart';
 
 class _FakePathProvider extends PathProviderPlatform with MockPlatformInterfaceMixin {
   _FakePathProvider(this.dir);
@@ -50,7 +52,10 @@ void main() {
 
   test('default state is enabled; service starts after the listener fires',
       () async {
+    final db = AppDatabase.memory();
+    addTearDown(db.close);
     final container = ProviderContainer(overrides: [
+      appDatabaseProvider.overrideWithValue(db),
       // Ephemeral port so tests can run side-by-side without
       // colliding on 16800.
       browserIntegrationPortProvider.overrideWithValue(0),
@@ -67,7 +72,10 @@ void main() {
   });
 
   test('toggling enabled=false stops the service', () async {
+    final db = AppDatabase.memory();
+    addTearDown(db.close);
     final container = ProviderContainer(overrides: [
+      appDatabaseProvider.overrideWithValue(db),
       browserIntegrationPortProvider.overrideWithValue(0),
     ]);
     addTearDown(container.dispose);
@@ -84,7 +92,10 @@ void main() {
 
   test('toggling enabled=true after disable re-starts the service',
       () async {
+    final db = AppDatabase.memory();
+    addTearDown(db.close);
     final container = ProviderContainer(overrides: [
+      appDatabaseProvider.overrideWithValue(db),
       browserIntegrationPortProvider.overrideWithValue(0),
     ]);
     addTearDown(container.dispose);

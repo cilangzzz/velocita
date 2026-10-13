@@ -1,21 +1,21 @@
 // ignore_for_file: avoid_relative_lib_imports
 // AsyncNotifier owning the persisted [BrowserIntegrationSettings].
 //
-// Mirrors the pattern in
-// `features/settings/data/download_settings_provider.dart`:
-//   * JSON file under `<appSupport>/velocita/browser-integration.json`
-//   * load on `build()`, fall back to defaults on a corrupt file
-//   * in-memory snapshot is the UI source of truth at runtime
+// Backed by a single key-value row in the `browser_integration_settings`
+// table of the shared `velocita.db` (replaces the previous
+// browser-integration.json file). The in-memory snapshot is the UI
+// source of truth; the DB row is rebuilt on `build()` and patched
+// on every `apply()` / `markInstalled()` / `markUninstalled()`.
 //
 // Unlike download settings, these are NOT pushed to the engine — the
 // browser-integration knobs only drive the app shell's behavior.
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
+import '../../../kernel_bridge/kernel_provider.dart';
+import '../../../persistence/database.dart' show BrowserIntegrationDao;
+import '../../../persistence/defaults.dart';
 import '../domain/browser_integration_settings.dart';
 
 final browserIntegrationSettingsProvider =
@@ -26,29 +26,22 @@ final browserIntegrationSettingsProvider =
 
 class BrowserIntegrationSettingsNotifier
     extends AsyncNotifier<BrowserIntegrationSettings> {
-  late File _file;
+  late final BrowserIntegrationDao _dao;
 
   @override
   Future<BrowserIntegrationSettings> build() async {
-    final dir = await getApplicationSupportDirectory();
-    _file = File('${dir.path}/velocita/browser-integration.json');
-    await _file.parent.create(recursive: true);
-    return _load();
-  }
-
-  Future<BrowserIntegrationSettings> _load() async {
-    if (!await _file.exists()) return const BrowserIntegrationSettings();
-    try {
-      final raw =
-          jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
-      return BrowserIntegrationSettings.fromJson(raw);
-    } catch (_) {
-      return const BrowserIntegrationSettings();
+    _dao = ref.read(appDatabaseProvider).browserIntegrationDao;
+    final kv = await _dao.all();
+    if (kv.isEmpty) {
+      // First run: persist the defaults so the row exists, then
+      // return them. This makes subsequent reads cheap and gives
+      // the user something to "edit from" instead of an empty
+      // state.
+      const defaults = BrowserIntegrationSettings();
+      await _dao.putAll(browserIntegrationKeyValue(defaults));
+      return defaults;
     }
-  }
-
-  Future<void> _persist(BrowserIntegrationSettings s) async {
-    await _file.writeAsString(jsonEncode(s.toJson()));
+    return browserIntegrationFromMap(kv);
   }
 
   /// Patch fields. Persists on success; UI sees the new state on the
@@ -68,7 +61,7 @@ class BrowserIntegrationSettingsNotifier
       installedBrowsers: installedBrowsers,
     );
     state = AsyncData(next);
-    await _persist(next);
+    await _dao.putAll(browserIntegrationKeyValue(next));
   }
 
   /// Add a browser to the [installedBrowsers] set. Idempotent.
@@ -80,7 +73,7 @@ class BrowserIntegrationSettingsNotifier
       installedBrowsers: {...current.installedBrowsers, kind},
     );
     state = AsyncData(next);
-    await _persist(next);
+    await _dao.putAll(browserIntegrationKeyValue(next));
   }
 
   /// Drop a browser from the [installedBrowsers] set. Idempotent.
@@ -95,6 +88,6 @@ class BrowserIntegrationSettingsNotifier
       },
     );
     state = AsyncData(next);
-    await _persist(next);
+    await _dao.putAll(browserIntegrationKeyValue(next));
   }
 }
